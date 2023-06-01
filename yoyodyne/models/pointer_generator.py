@@ -83,6 +83,7 @@ class PointerGeneratorLSTMEncoderDecoderNoFeatures(lstm.LSTMEncoderDecoder):
             padding_value=self.pad_idx,
             total_length=None,
         )
+        # encoded, (H, C) = encoder(embedded)
         # Sums over directions, keeping layers.
         # -> num_layers x B x hidden_size.
         H = H.view(
@@ -221,7 +222,7 @@ class PointerGeneratorLSTMEncoderDecoderNoFeatures(lstm.LSTMEncoderDecoder):
         predictions = torch.stack(predictions)
         return predictions
 
-    def forward(self, batch: batches.PaddedBatch) -> torch.Tensor:
+    def forward(self, batch: batches.PaddedBatch, **kwargs) -> torch.Tensor:
         """Runs the encoder-decoder.
 
         Args:
