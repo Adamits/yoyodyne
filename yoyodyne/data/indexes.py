@@ -1,9 +1,10 @@
-"""Indexes for symbols."""
-import pickle
+"""Symbol index."""
+
 import os
+import pickle
 from typing import Dict, List, Optional, Set
 
-from . import special
+from .. import special
 
 
 class SymbolMap:
@@ -13,6 +14,7 @@ class SymbolMap:
     symbol2index: Dict[str, int]
 
     def __init__(self, vocabulary: List[str]):
+        # Keeps special.SPECIAL first to maintain overlap with features.
         self._index2symbol = special.SPECIAL + vocabulary
         self._symbol2index = {c: i for i, c in enumerate(self._index2symbol)}
 
@@ -47,37 +49,7 @@ class SymbolMap:
         return ", ".join(f"{c!r}" for c in self._index2symbol)
 
 
-class BaseIndex:
-    """Container for symbol maps."""
-
-    # Serialization support.
-
-    @classmethod
-    def read(cls, path: str):
-        """Loads symbol mappings.
-
-        Args:
-            path (str): input path.
-        """
-        index = cls.__new__(cls)
-        with open(path, "rb") as source:
-            dictionary = pickle.load(source)
-        for key, value in dictionary.items():
-            setattr(index, key, value)
-        return index
-
-    def write(self, path: str) -> None:
-        """Saves index.
-
-        Args:
-            path (str): output path.
-        """
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "wb") as sink:
-            pickle.dump(vars(self), sink)
-
-
-class IndexNoFeatures(BaseIndex):
+class Index:
     """Container for symbol maps.
 
     For consistency, one is recommended to lexicographically sort the
@@ -85,25 +57,94 @@ class IndexNoFeatures(BaseIndex):
 
     source_map: SymbolMap
     target_map: SymbolMap
+    features_map: Optional[SymbolMap]
 
     def __init__(
         self,
+        *,
         source_vocabulary: List[str],
-        target_vocabulary: List[str],
+        features_vocabulary: Optional[List[str]] = None,
+        target_vocabulary: Optional[List[str]] = None,
     ):
         """Initializes the index.
 
         Args:
             source_vocabulary (List[str]).
-            target_vocabulary (List[str]).
+            features_vocabulary (List[str], optional).
+            target_vocabulary (List[str], optional).
         """
         super().__init__()
         self.source_map = SymbolMap(source_vocabulary)
-        self.target_map = SymbolMap(target_vocabulary)
+        self.features_map = (
+            SymbolMap(features_vocabulary) if features_vocabulary else None
+        )
+        self.target_map = (
+            SymbolMap(target_vocabulary) if target_vocabulary else None
+        )
+
+    # Serialization support.
+
+    @classmethod
+    def read(cls, model_dir: str, experiment: str) -> "Index":
+        """Loads index.
+
+        Args:
+            model_dir (str).
+            experiment (str).
+
+        Returns:
+            Index.
+        """
+        index = cls.__new__(cls)
+        path = index.index_path(model_dir, experiment)
+        with open(path, "rb") as source:
+            dictionary = pickle.load(source)
+        for key, value in dictionary.items():
+            setattr(index, key, value)
+        return index
+
+    @staticmethod
+    def index_path(model_dir: str, experiment: str) -> str:
+        """Computes path for the index file.
+
+        Args:
+            model_dir (str).
+            experiment (str).
+
+        Returns:
+            str.
+        """
+        return f"{model_dir}/{experiment}/index.pkl"
+
+    def write(self, model_dir: str, experiment: str) -> None:
+        """Writes index.
+
+        Args:
+            model_dir (str).
+            experiment (str).
+        """
+        path = self.index_path(model_dir, experiment)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as sink:
+            pickle.dump(vars(self), sink)
+
+    # Properties.
 
     @property
     def source_vocab_size(self) -> int:
         return len(self.source_map)
+
+    @property
+    def has_features(self) -> bool:
+        return self.features_map is not None
+
+    @property
+    def features_vocab_size(self) -> int:
+        return len(self.features_map) if self.has_features else 0
+
+    @property
+    def has_target(self) -> bool:
+        return self.target_map is not None
 
     @property
     def target_vocab_size(self) -> int:
@@ -128,33 +169,3 @@ class IndexNoFeatures(BaseIndex):
     @property
     def special_idx(self) -> Set[int]:
         return {self.unk_idx, self.pad_idx, self.start_idx, self.end_idx}
-
-
-class IndexFeatures(IndexNoFeatures):
-    """Also stores a feature index."""
-
-    features_idx: int
-
-    def __init__(
-        self,
-        source_vocabulary: List[str],
-        features_vocabulary: List[str],
-        target_vocabulary: List[str],
-    ):
-        """Initializes the index.
-
-        Args:
-            source_vocabulary (List[str]).
-            features (List[str]).
-            target_vocabulary (List[str]).
-        """
-        # We concatenate the source and feature vocabularies.
-        super().__init__(
-            source_vocabulary + features_vocabulary, target_vocabulary
-        )
-        # self.features_idx = len(special.SPECIAL) + self.source_vocab_size
-        self.features_idx = self.source_vocab_size
-
-    @property
-    def features_vocab_size(self) -> int:
-        return len(self.source_map) - self.features_idx

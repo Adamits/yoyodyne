@@ -1,17 +1,20 @@
 """Collators and related utilities."""
 
 import argparse
+import dataclasses
 from typing import List
 
 import torch
 
-from . import batches, dataconfig, datasets, defaults, util
+from .. import defaults, util
+from . import batches, datasets
 
 
 class LengthError(Exception):
     pass
 
 
+@dataclasses.dataclass
 class Collator:
     """Pads data."""
 
@@ -19,37 +22,11 @@ class Collator:
     has_features: bool
     has_target: bool
     separate_features: bool
-    max_source_length: int
-    max_target_length: int
+    features_offset: int
+    max_source_length: int = defaults.MAX_SOURCE_LENGTH
+    max_target_length: int = defaults.MAX_TARGET_LENGTH
 
-    def __init__(
-        self,
-        pad_idx,
-        config: dataconfig.DataConfig,
-        arch: str,
-        max_source_length: int = defaults.MAX_SOURCE_LENGTH,
-        max_target_length: int = defaults.MAX_TARGET_LENGTH,
-    ):
-        """Initializes the collator.
-
-        Args:
-            pad_idx (int).
-            config (dataconfig.DataConfig).
-            arch (str).
-            max_source_length (int).
-            max_target_length (int).
-        """
-        self.pad_idx = pad_idx
-        self.has_features = config.has_features
-        self.has_target = config.has_target
-        self.max_source_length = max_source_length
-        self.max_target_length = max_target_length
-        self.separate_features = config.has_features and arch in [
-            "pointer_generator_lstm",
-            "transducer",
-        ]
-
-    def _source_length_error(self, padded_length: int):
+    def _source_length_error(self, padded_length: int) -> None:
         """Callback function to raise the error when the padded length of the
         source batch is greater than the `max_source_length` allowed.
 
@@ -60,12 +37,13 @@ class Collator:
             LengthError.
         """
         if padded_length > self.max_source_length:
-            msg = f"The length of a source sample ({padded_length}) "
-            msg += "is greater than the allowed `--max_source_length` "
-            msg += f"({self.max_source_length})"
-            raise LengthError(msg)
+            raise LengthError(
+                f"The length of a source sample ({padded_length}) is greater "
+                f"than the `--max_source_length` specified "
+                f"({self.max_source_length})"
+            )
 
-    def _target_length_warning(self, padded_length: int):
+    def _target_length_warning(self, padded_length: int) -> None:
         """Callback function to log a message when the padded length of the
         target batch is greater than the `max_target_length` allowed.
 
@@ -76,21 +54,21 @@ class Collator:
             padded_length (int): The length of the the padded tensor.
         """
         if padded_length > self.max_target_length:
-            msg = f"The length of a batch ({padded_length}) "
-            msg += "is greater than the `--max_target_length` specified "
-            msg += f"({self.max_target_length}). This means that "
-            msg += "decoding at inference time will likely be truncated. "
-            msg += "Consider increasing `--max_target_length`."
-            util.log_info(msg)
+            util.log_info(
+                f"The length of a batch ({padded_length}) is greater than the "
+                f"`--max_target_length` specified ({self.max_target_length}); "
+                f"decoding at inference time will likely be truncated. "
+                f"Consider increasing `--max_target_length`."
+            )
 
-    @staticmethod
     def concatenate_source_and_features(
+        self,
         itemlist: List[datasets.Item],
     ) -> List[torch.Tensor]:
         """Concatenates source and feature tensors."""
         return [
             (
-                torch.cat((item.source, item.features))
+                torch.cat((item.source, item.features + self.features_offset))
                 if item.has_features
                 else item.source
             )

@@ -10,17 +10,24 @@ import pytorch_lightning as pl
 import torch
 from torch import nn, optim
 
-from .. import batches, defaults, evaluators, schedulers, util
+from .. import data, defaults, evaluators, schedulers, util
+from . import modules
+
+
+class Error(Exception):
+    pass
 
 
 class BaseEncoderDecoder(pl.LightningModule):
+    #  TODO: clean up type checking here.
     # Indices.
+    end_idx: int
     pad_idx: int
     start_idx: int
-    end_idx: int
     # Sizes.
-    vocab_size: int
-    output_size: int
+    source_vocab_size: int
+    features_vocab_size: int
+    target_vocab_size: int
     # Optimizer arguments.
     beta1: float
     beta2: float
@@ -29,15 +36,19 @@ class BaseEncoderDecoder(pl.LightningModule):
     scheduler_kwargs: Optional[Dict]
     # Regularization arguments.
     dropout: float
-    label_smoothing: Optional[float]
+    label_smoothing: float
+    teacher_forcing: bool
     # Decoding arguments.
     beam_width: int
+    max_source_length: int
     max_target_length: int
     # Model arguments.
-    decoder_layers: int
     embedding_size: int
     encoder_layers: int
+    decoder_layers: int
+    features_encoder_cls: Optional[modules.base.BaseModule]
     hidden_size: int
+    source_encoder_cls: modules.base.BaseModule
     # Constructed inside __init__.
     dropout_layer: nn.Dropout
     evaluator: evaluators.Evaluator
@@ -49,8 +60,11 @@ class BaseEncoderDecoder(pl.LightningModule):
         pad_idx,
         start_idx,
         end_idx,
-        vocab_size,
-        output_size,
+        source_vocab_size,
+        target_vocab_size,
+        source_encoder_cls,
+        features_encoder_cls=None,
+        features_vocab_size=0,
         beta1=defaults.BETA1,
         beta2=defaults.BETA2,
         learning_rate=defaults.LEARNING_RATE,
@@ -58,30 +72,38 @@ class BaseEncoderDecoder(pl.LightningModule):
         scheduler=None,
         scheduler_kwargs=None,
         dropout=defaults.DROPOUT,
-        label_smoothing=None,
+        label_smoothing=defaults.LABEL_SMOOTHING,
+        teacher_forcing=defaults.TEACHER_FORCING,
         beam_width=defaults.BEAM_WIDTH,
+        max_source_length=defaults.MAX_SOURCE_LENGTH,
         max_target_length=defaults.MAX_TARGET_LENGTH,
+        encoder_layers=defaults.ENCODER_LAYERS,
         decoder_layers=defaults.DECODER_LAYERS,
         embedding_size=defaults.EMBEDDING_SIZE,
-        encoder_layers=defaults.ENCODER_LAYERS,
         hidden_size=defaults.HIDDEN_SIZE,
         **kwargs,  # Ignored.
     ):
         super().__init__()
+        # Symbol processing.
         self.pad_idx = pad_idx
         self.start_idx = start_idx
         self.end_idx = end_idx
-        self.vocab_size = vocab_size
-        self.output_size = output_size
+        self.source_vocab_size = source_vocab_size
+        self.features_vocab_size = features_vocab_size
+        self.target_vocab_size = target_vocab_size
         self.beta1 = beta1
         self.beta2 = beta2
+        self.label_smoothing = label_smoothing
         self.learning_rate = learning_rate
+        self.loss_func = self._get_loss_func()
         self.optimizer = optimizer
         self.scheduler = scheduler
         self.scheduler_kwargs = scheduler_kwargs
         self.dropout = dropout
         self.label_smoothing = label_smoothing
+        self.teacher_forcing = teacher_forcing
         self.beam_width = beam_width
+        self.max_source_length = max_source_length
         self.max_target_length = max_target_length
         self.decoder_layers = decoder_layers
         self.embedding_size = embedding_size
@@ -89,9 +111,53 @@ class BaseEncoderDecoder(pl.LightningModule):
         self.hidden_size = hidden_size
         self.dropout_layer = nn.Dropout(p=self.dropout, inplace=False)
         self.evaluator = evaluators.Evaluator()
-        self.loss_func = self._get_loss_func("mean")
+        # Checks compatibility with feature encoder and dataloader.
+        modules.check_encoder_compatibility(
+            source_encoder_cls, features_encoder_cls
+        )
+        # Instantiates encoders class.
+        self.source_encoder = source_encoder_cls(
+            pad_idx=self.pad_idx,
+            start_idx=self.start_idx,
+            end_idx=self.end_idx,
+            num_embeddings=self.source_vocab_size,
+            dropout=self.dropout,
+            embedding_size=self.embedding_size,
+            layers=self.encoder_layers,
+            hidden_size=self.hidden_size,
+            features_vocab_size=features_vocab_size,
+            max_source_length=max_source_length,
+            **kwargs,
+        )
+        self.features_encoder = (
+            features_encoder_cls(
+                pad_idx=self.pad_idx,
+                start_idx=self.start_idx,
+                end_idx=self.end_idx,
+                num_embeddings=features_vocab_size,
+                dropout=self.dropout,
+                embedding_size=self.embedding_size,
+                layers=self.encoder_layers,
+                hidden_size=self.hidden_size,
+                max_source_length=max_source_length,
+                **kwargs,
+            )
+            if features_encoder_cls is not None
+            else None
+        )
+        self.decoder = self.get_decoder()
         # Saves hyperparameters for PL checkpointing.
-        self.save_hyperparameters()
+        self.save_hyperparameters(
+            ignore=["source_encoder", "decoder", "features_encoder"]
+        )
+        # Logs the module names.
+        util.log_info(f"Model: {self.name}")
+        if self.features_encoder is not None:
+            util.log_info(f"Source encoder: {self.source_encoder.name}")
+            util.log_info(f"Features encoder: {self.features_encoder.name}")
+        else:
+            util.log_info(f"Encoder: {self.source_encoder.name}")
+        util.log_info(f"Decoder: {self.decoder.name}")
 
     @staticmethod
     def _xavier_embedding_initialization(
@@ -160,9 +226,16 @@ class BaseEncoderDecoder(pl.LightningModule):
         """
         raise NotImplementedError
 
+    def get_decoder(self):
+        raise NotImplementedError
+
+    @property
+    def has_features_encoder(self):
+        return self.features_encoder is not None
+
     def training_step(
         self,
-        batch: batches.PaddedBatch,
+        batch: data.PaddedBatch,
         batch_idx: int,
     ) -> torch.Tensor:
         """Runs one step of training.
@@ -170,16 +243,16 @@ class BaseEncoderDecoder(pl.LightningModule):
         This is called by the PL Trainer.
 
         Args:
-            batch (batches.PaddedBatch)
+            batch (data.PaddedBatch)
             batch_idx (int).
 
         Returns:
             torch.Tensor: loss.
         """
-        # -> B x seq_len x output_size.
+        # -> B x seq_len x target_vocab_size.
         predictions = self(batch)
         target_padded = batch.target.padded
-        # -> B x output_size x seq_len. For loss.
+        # -> B x target_vocab_size x seq_len. For loss.
         predictions = predictions.transpose(1, 2)
         loss = self.loss_func(predictions, target_padded)
         self.log(
@@ -193,7 +266,7 @@ class BaseEncoderDecoder(pl.LightningModule):
 
     def validation_step(
         self,
-        batch: batches.PaddedBatch,
+        batch: data.PaddedBatch,
         batch_idx: int,
     ) -> Dict:
         """Runs one validation step.
@@ -201,26 +274,27 @@ class BaseEncoderDecoder(pl.LightningModule):
         This is called by the PL Trainer.
 
         Args:
-            batch (batches.PaddedBatch).
+            batch (data.PaddedBatch).
             batch_idx (int).
 
         Returns:
             Dict[str, float]: validation metrics.
         """
         # Greedy decoding.
-        # -> B x seq_len x output_size.
-        predictions = self(batch)
+        # -> B x seq_len x target_vocab_size.
         target_padded = batch.target.padded
-        accuracy = self.evaluator.val_accuracy(
-            predictions, target_padded, self.end_idx, self.pad_idx
+        greedy_predictions = self(batch)
+        val_eval_item = self.evaluator.evaluate(
+            greedy_predictions, target_padded, self.end_idx, self.pad_idx
         )
-        # We rerun the model with teacher forcing so we can compute loss.
-        # TODO: Update to run the model only once.
-        forced_predictions = self(batch)
-        # -> B x output_size x seq_len. For loss.
-        forced_predictions = forced_predictions.transpose(1, 2)
-        loss = self.loss_func(forced_predictions, target_padded)
-        return {"val_accuracy": accuracy, "val_loss": loss}
+        # -> B x target_vocab_size x seq_len. For loss.
+        greedy_predictions = greedy_predictions.transpose(1, 2)
+        # Truncates predictions to the size of the target.
+        greedy_predictions = torch.narrow(
+            greedy_predictions, 2, 0, target_padded.size(1)
+        )
+        loss = self.loss_func(greedy_predictions, target_padded)
+        return {"val_eval_item": val_eval_item, "val_loss": loss}
 
     def validation_epoch_end(self, validation_step_outputs: Dict) -> Dict:
         """Computes average loss and average accuracy.
@@ -231,18 +305,22 @@ class BaseEncoderDecoder(pl.LightningModule):
         Returns:
             Dict: averaged metrics over all validation steps.
         """
-        keys = validation_step_outputs[0].keys()
-        # Shortens name to do comprehension below.
-        # TODO: there has to be a more elegant way to do this.
-        V = validation_step_outputs
-        metrics = {k: sum([v[k] for v in V]) / len(V) for k in keys}
+        num_steps = len(validation_step_outputs)
+        avg_val_loss = (
+            sum([v["val_loss"] for v in validation_step_outputs]) / num_steps
+        )
+        epoch_eval = sum(v["val_eval_item"] for v in validation_step_outputs)
+        metrics = {
+            "val_loss": avg_val_loss,
+            "val_accuracy": epoch_eval.accuracy,
+        }
         for metric, value in metrics.items():
             self.log(metric, value, prog_bar=True)
         return metrics
 
     def predict_step(
         self,
-        batch: batches.PaddedBatch,
+        batch: data.PaddedBatch,
         batch_idx: int,
     ) -> torch.Tensor:
         """Runs one predict step.
@@ -250,7 +328,7 @@ class BaseEncoderDecoder(pl.LightningModule):
         This is called by the PL Trainer.
 
         Args:
-            batch (batches.PaddedBatch).
+            batch (data.PaddedBatch).
             batch_idx (int).
 
         Returns:
@@ -265,7 +343,7 @@ class BaseEncoderDecoder(pl.LightningModule):
         """Picks the best index from the vocabulary.
 
         Args:
-            predictions (torch.Tensor): B x seq_len x output_size.
+            predictions (torch.Tensor): B x seq_len x target_vocab_size.
 
         Returns:
             torch.Tensor: indices of the argmax at each timestep.
@@ -284,12 +362,6 @@ class BaseEncoderDecoder(pl.LightningModule):
         """
         optimizer = self._get_optimizer()
         scheduler = self._get_lr_scheduler(optimizer[0])
-        if scheduler:
-            util.log_info("Scheduler details:")
-            util.log_info(scheduler)
-        else:
-            util.log_info("Optimizer details:")
-            util.log_info(optimizer)
         return optimizer, scheduler
 
     def _get_optimizer(self) -> optim.Optimizer:
@@ -336,64 +408,38 @@ class BaseEncoderDecoder(pl.LightningModule):
             "interval": "step",
             "frequency": 1,
         }
-        # For reduce on plateau min, we want to reduce when val loss stops decreasing.
-        if self.scheduler == "reduceonplateau" and self.scheduler_kwargs.get("reduceonplateau_mode") == "min":
-            scheduler_cfg.update({"monitor": "val_loss"})
-        return [scheduler_cfg]
+        # When using `reduceonplateau_mode loss`, we reduce when validation
+        # loss stops decreasing. When using `reduceonplateau_mode accuracy`,
+        # we reduce when validation accuracy stops increasing.
+        if self.scheduler == "reduceonplateau":
+            scheduler_cfg["interval"] = "epoch"
+            scheduler_cfg["frequency"] = self.scheduler_kwargs[
+                "check_val_every_n_epoch"
+            ]
+            mode = self.scheduler_kwargs.get("reduceonplateau_mode")
+            if not mode:
+                raise Error("No reduceonplateaumode specified")
+            elif mode == "loss":
+                scheduler_cfg["monitor"] = "val_loss"
+            elif mode == "accuracy":
+                scheduler_cfg["monitor"] = "val_accuracy"
+            else:
+                raise Error(f"reduceonplateau mode not found: {mode}")
+            return [scheduler_cfg]
 
     def _get_loss_func(
-        self, reduction: str
+        self,
     ) -> Callable[[torch.Tensor, torch.Tensor], torch.Tensor]:
         """Returns the actual function used to compute loss.
-
-        Args:
-            reduction (str): reduction for the loss function (e.g., "mean").
 
         Returns:
             Callable[[torch.Tensor, torch.Tensor], torch.Tensor]: configured
                 loss function.
         """
-        if self.label_smoothing is None:
-            return nn.NLLLoss(ignore_index=self.pad_idx, reduction=reduction)
-        else:
-            return self._smooth_nllloss
-
-    def _smooth_nllloss(
-        self, predictions: torch.Tensor, target: torch.Tensor
-    ) -> Callable[[torch.Tensor, torch.Tensor], torch.Tensor]:
-        """After:
-
-            https://github.com/NVIDIA/DeepLearningExamples/blob/
-            8d8b21a933fff3defb692e0527fca15532da5dc6/PyTorch/Classification/
-            ConvNets/image_classification/smoothing.py#L18
-
-        Args:
-            predictions (torch.Tensor): tensor of prediction
-                distribution of shape B x output_size x seq_len.
-            target (torch.Tensor): tensor of golds of shape
-                B x seq_len.
-
-        Returns:
-            torch.Tensor: loss.
-        """
-        # -> (B * seq_len) x output_size.
-        predictions = predictions.transpose(1, 2).reshape(-1, self.output_size)
-        # -> (B * seq_len) x 1.
-        target = target.view(-1, 1)
-        non_pad_mask = target.ne(self.pad_idx)
-        # Gets the ordinary loss.
-        nll_loss = -predictions.gather(dim=-1, index=target)[
-            non_pad_mask
-        ].mean()
-        # Gets the smoothed loss.
-        smooth_loss = -predictions.sum(dim=-1, keepdim=True)[
-            non_pad_mask
-        ].mean()
-        smooth_loss = smooth_loss / self.output_size
-        # Combines both according to label smoothing weight.
-        loss = (1.0 - self.label_smoothing) * nll_loss
-        loss += self.label_smoothing * smooth_loss
-        return loss
+        return nn.CrossEntropyLoss(
+            ignore_index=self.pad_idx,
+            label_smoothing=self.label_smoothing,
+        )
 
     @staticmethod
     def add_argparse_args(parser: argparse.ArgumentParser) -> None:
@@ -439,7 +485,8 @@ class BaseEncoderDecoder(pl.LightningModule):
         parser.add_argument(
             "--label_smoothing",
             type=float,
-            help="Coefficient for label smoothing.",
+            default=defaults.LABEL_SMOOTHING,
+            help="Coefficient for label smoothing. Default: %(default)s.",
         )
         # TODO: add --beam_width.
         # Model arguments.
@@ -450,16 +497,16 @@ class BaseEncoderDecoder(pl.LightningModule):
             help="Number of decoder layers. Default: %(default)s.",
         )
         parser.add_argument(
-            "--embedding_size",
-            type=int,
-            default=defaults.EMBEDDING_SIZE,
-            help="Dimensionality of embeddings. Default: %(default)s.",
-        )
-        parser.add_argument(
             "--encoder_layers",
             type=int,
             default=defaults.ENCODER_LAYERS,
             help="Number of encoder layers. Default: %(default)s.",
+        )
+        parser.add_argument(
+            "--embedding_size",
+            type=int,
+            default=defaults.EMBEDDING_SIZE,
+            help="Dimensionality of embeddings. Default: %(default)s.",
         )
         parser.add_argument(
             "--hidden_size",
