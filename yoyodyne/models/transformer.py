@@ -186,3 +186,123 @@ class TransformerEncoderDecoder(base.BaseEncoderDecoder):
             "(transformer-backed pointer-generator only. "
             "Default: %(default)s.",
         )
+
+
+class DecoderOnlyTransformer(base.BaseDecoderOnly):
+    """Transformer decoder only model."""
+
+    # Constructed inside __init__.
+    classifier: nn.Linear
+
+    def __init__(
+        self,
+        *args,
+        **kwargs,
+    ):
+        """Initializes the encoder-decoder with attention.
+
+        Args:
+            max_source_length (int).
+            *args: passed to superclass.
+            **kwargs: passed to superclass.
+        """
+        super().__init__(
+            *args, **kwargs
+        )
+        self.classifier = nn.Linear(
+            self.embedding_size, self.target_vocab_size
+        )
+        decoder_layer = nn.TransformerDecoderLayer(
+            d_model=self.decoder_input_size,
+            dim_feedforward=self.hidden_size,
+            nhead=self.source_attention_heads,
+            dropout=self.dropout,
+            activation="relu",
+            norm_first=True,
+            batch_first=True,
+        )
+        self.decoder = nn.TransformerDecoder(
+            decoder_layer=decoder_layer,
+            num_layers=self.layers,
+            norm=nn.LayerNorm(self.embedding_size),
+        )
+
+    def _get_prefix_mask():
+        # Maybe use https://github.com/bigscience-workshop/Megatron-DeepSpeed/pull/52/files as reference
+        # but they basically do what youd expect.
+        pass
+
+    def decode(
+        self,
+        encoder_hidden: torch.Tensor,
+        source_mask: torch.Tensor,
+        target: torch.Tensor,
+        target_mask: torch.Tensor,
+    ):
+        target_embedding = self.embed(target)
+        target_sequence_length = target_embedding.size(1)
+        # TODO: instead we want a causal-prefix mask.
+        # Something like causal_mask[:, :prefix_length]
+        # ISSUE: we will have variable prefix lengths per batch right?.
+        #       I guess we may want to handle this in dataloading.
+        # -> seq_len x seq_len.
+        causal_mask = self.generate_square_subsequent_mask(
+            target_sequence_length
+        ).to(self.device)
+
+        # -> B x seq_len x d_model.
+        output = self.decoder(
+            target_embedding,
+            encoder_hidden,
+            tgt_mask=causal_mask,
+            memory_key_padding_mask=source_mask,
+            tgt_key_padding_mask=target_mask,
+        )
+        return base.ModuleOutput(output, embeddings=target_embedding)
+    
+    def forward(
+        self,
+        batch: data.PaddedBatch,
+    ) -> torch.Tensor:
+        """Runs the encoder-decoder.
+
+        Args:
+            batch (data.PaddedBatch).
+
+        Returns:
+            torch.Tensor.
+        """
+        if self.training and self.teacher_forcing:
+            assert (
+                batch.target.padded is not None
+            ), "Teacher forcing requested but no target provided"
+            # Initializes the start symbol for decoding.
+            starts = (
+                torch.tensor(
+                    [self.start_idx], device=self.device, dtype=torch.long
+                )
+                .repeat(batch.target.padded.size(0))
+                .unsqueeze(1)
+            )
+            target_padded = torch.cat((starts, batch.target.padded), dim=1)
+            target_mask = torch.cat(
+                (starts == self.pad_idx, batch.target.mask), dim=1
+            )
+            decoder_output = self.decoder(
+                encoder_output, batch.source.mask, target_padded, target_mask
+            ).output
+            logits = self.classifier(decoder_output)
+            output = logits[:, :-1, :]  # Ignore EOS.
+        else:
+            encoder_output = self.source_encoder(batch.source).output
+            # -> B x seq_len x output_size.
+            output = self._decode_greedy(
+                encoder_output,
+                batch.source.mask,
+                batch.target.padded if batch.target else None,
+            )
+        return output
+
+    @property
+    def name(self) -> str:
+        return "decoder-only transformer"

@@ -515,3 +515,99 @@ class BaseEncoderDecoder(pl.LightningModule):
             help="Dimensionality of the hidden layer(s). "
             "Default: %(default)s.",
         )
+
+class BaseDecoderOnly(BaseEncoderDecoder):
+    #  TODO: clean up type checking here.
+    # Indices.
+    end_idx: int
+    pad_idx: int
+    start_idx: int
+    # Sizes.
+    source_vocab_size: int
+    features_vocab_size: int
+    target_vocab_size: int
+    # Optimizer arguments.
+    beta1: float
+    beta2: float
+    optimizer: str
+    scheduler: Optional[str]
+    scheduler_kwargs: Optional[Dict]
+    # Regularization arguments.
+    dropout: float
+    label_smoothing: float
+    teacher_forcing: bool
+    # Decoding arguments.
+    beam_width: int
+    max_source_length: int
+    max_target_length: int
+    # Model arguments.
+    embedding_size: int
+    decoder_layers: int
+    hidden_size: int
+    # Constructed inside __init__.
+    dropout_layer: nn.Dropout
+    evaluator: evaluators.Evaluator
+    loss: Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
+
+    def __init__(
+        self,
+        *,
+        pad_idx,
+        start_idx,
+        end_idx,
+        source_vocab_size,
+        target_vocab_size,
+        source_encoder_cls,
+        features_encoder_cls=None,
+        features_vocab_size=0,
+        beta1=defaults.BETA1,
+        beta2=defaults.BETA2,
+        learning_rate=defaults.LEARNING_RATE,
+        optimizer=defaults.OPTIMIZER,
+        scheduler=None,
+        scheduler_kwargs=None,
+        dropout=defaults.DROPOUT,
+        label_smoothing=defaults.LABEL_SMOOTHING,
+        teacher_forcing=defaults.TEACHER_FORCING,
+        beam_width=defaults.BEAM_WIDTH,
+        max_source_length=defaults.MAX_SOURCE_LENGTH,
+        max_target_length=defaults.MAX_TARGET_LENGTH,
+        encoder_layers=defaults.ENCODER_LAYERS,
+        decoder_layers=defaults.DECODER_LAYERS,
+        embedding_size=defaults.EMBEDDING_SIZE,
+        hidden_size=defaults.HIDDEN_SIZE,
+        **kwargs,  # Ignored.
+    ):
+        super().__init__(BaseEncoderDecoder)
+        # Symbol processing.
+        self.pad_idx = pad_idx
+        self.start_idx = start_idx
+        self.end_idx = end_idx
+        self.source_vocab_size = source_vocab_size
+        self.features_vocab_size = features_vocab_size
+        self.target_vocab_size = target_vocab_size
+        self.beta1 = beta1
+        self.beta2 = beta2
+        self.label_smoothing = label_smoothing
+        self.learning_rate = learning_rate
+        self.loss_func = self._get_loss_func()
+        self.optimizer = optimizer
+        self.scheduler = scheduler
+        self.scheduler_kwargs = scheduler_kwargs
+        self.dropout = dropout
+        self.label_smoothing = label_smoothing
+        self.teacher_forcing = teacher_forcing
+        self.beam_width = beam_width
+        self.max_source_length = max_source_length
+        self.max_target_length = max_target_length
+        self.decoder_layers = decoder_layers
+        self.embedding_size = embedding_size
+        self.hidden_size = hidden_size
+        self.dropout_layer = nn.Dropout(p=self.dropout, inplace=False)
+        self.evaluator = evaluators.Evaluator()
+        self.decoder = self.get_decoder()
+        # Saves hyperparameters for PL checkpointing.
+        self.save_hyperparameters(
+            ignore=["decoder"]
+        )
+        util.log_info(f"Decoder: {self.decoder.name}")
