@@ -9,7 +9,7 @@ from .pointer_generator import (
     PointerGeneratorTransformerEncoderDecoder,
 )
 from .transducer import TransducerEncoderDecoder
-from .transformer import TransformerEncoderDecoder
+from .transformer import TransformerEncoderDecoder, DecoderOnlyTransformer
 
 
 def get_model_cls(arch: str) -> BaseEncoderDecoder:
@@ -32,6 +32,7 @@ def get_model_cls(arch: str) -> BaseEncoderDecoder:
         "pointer_generator_transformer": PointerGeneratorTransformerEncoderDecoder,  # noqa: 501
         "transducer": TransducerEncoderDecoder,
         "transformer": TransformerEncoderDecoder,
+        "decoder_only_transformer": DecoderOnlyTransformer,
     }
     try:
         return model_fac[arch]
@@ -74,6 +75,7 @@ def add_argparse_args(parser: argparse.ArgumentParser) -> None:
             "pointer_generator_transformer",
             "transducer",
             "transformer",
+            "decoder_only_transformer",
         ],
         default="attentive_lstm",
         help="Model architecture. Default: %(default)s.",

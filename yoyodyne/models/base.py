@@ -280,6 +280,8 @@ class BaseEncoderDecoder(pl.LightningModule):
         Returns:
             Dict[str, float]: validation metrics.
         """
+
+        # FIXME: Make sure we are evaluating on the right preds...
         # Greedy decoding.
         # -> B x seq_len x target_vocab_size.
         target_padded = batch.target.padded
@@ -578,7 +580,7 @@ class BaseDecoderOnly(BaseEncoderDecoder):
         hidden_size=defaults.HIDDEN_SIZE,
         **kwargs,  # Ignored.
     ):
-        super().__init__(BaseEncoderDecoder)
+        super(BaseEncoderDecoder, self).__init__()
         # Symbol processing.
         self.pad_idx = pad_idx
         self.start_idx = start_idx
@@ -610,4 +612,90 @@ class BaseDecoderOnly(BaseEncoderDecoder):
         self.save_hyperparameters(
             ignore=["decoder"]
         )
-        util.log_info(f"Decoder: {self.decoder.name}")
+        util.log_info(f"Model: {self.name}")
+    
+    def training_step(
+        self,
+        batch: data.PaddedBatch,
+        batch_idx: int,
+    ) -> torch.Tensor:
+        # FIXME: We need to ensure we do not compute loss from the prefix.
+        """Runs one step of training.
+
+        This is called by the PL Trainer.
+
+        Args:
+            batch (data.PaddedBatch)
+            batch_idx (int).
+
+        Returns:
+            torch.Tensor: loss.
+        """
+        # -> B x seq_len x target_vocab_size.
+        predictions = self(batch)
+        # Target is the same as sequence but the prefix is pads.
+        target_padded = batch.target.padded
+        # -> B x target_vocab_size x seq_len. For loss.
+        predictions = predictions.transpose(1, 2)
+        print("TRAIN")
+        print("source")
+        print(batch.sequence.padded[0, :])
+        print("target")
+        print(target_padded[0, :])
+        print("pred")
+        print(predictions[0, :].argmax(dim=1))
+        print("="*30)
+        # N = torch.isnan(predictions).sum(dim=2)
+        # print(N.sum(dim=1))
+        loss = self.loss_func(predictions, target_padded)
+        self.log(
+            "train_loss",
+            loss,
+            batch_size=len(batch),
+            on_step=False,
+            on_epoch=True,
+        )
+        if torch.isnan(loss):
+            raise
+        return loss
+    
+    def validation_step(
+        self,
+        batch: data.PaddedBatch,
+        batch_idx: int,
+    ) -> Dict:
+        # FIXME: We need to provide the tensor with only the prefix, and then evaluate on 
+        #       the rest of the sequence
+        """Runs one validation step.
+
+        This is called by the PL Trainer.
+
+        Args:
+            batch (data.PaddedBatch).
+            batch_idx (int).
+
+        Returns:
+            Dict[str, float]: validation metrics.
+        """
+        # Greedy decoding.
+        # -> B x seq_len x target_vocab_size.
+        target_padded = batch.target.padded
+        greedy_predictions = self(batch)
+        print("source")
+        print(batch.sequence.padded[0, :])
+        print("target")
+        print(target_padded[0, :])
+        print("pred")
+        print(greedy_predictions[0, :target_padded.size(1)].argmax(dim=1))
+        print("="*30)
+        val_eval_item = self.evaluator.evaluate(
+            greedy_predictions, target_padded, self.end_idx, self.pad_idx
+        )
+        # -> B x target_vocab_size x seq_len. For loss.
+        greedy_predictions = greedy_predictions.transpose(1, 2)
+        # Truncates predictions to the size of the target.
+        greedy_predictions = torch.narrow(
+            greedy_predictions, 2, 0, target_padded.size(1)
+        )
+        loss = self.loss_func(greedy_predictions, target_padded)
+        return {"val_eval_item": val_eval_item, "val_loss": loss}

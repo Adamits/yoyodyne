@@ -1,7 +1,7 @@
 """Transformer model classes."""
 
 import math
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple, Union
 
 import torch
 from torch import nn
@@ -592,6 +592,7 @@ class TransformerDecoder(TransformerModule):
             torch.Tensor: mask of shape length x length.
         """
         return torch.triu(torch.full((length, length), -math.inf), diagonal=1)
+        # return torch.triu(torch.full((length, length), 0.0), diagonal=1)
 
     @property
     def output_size(self) -> int:
@@ -600,6 +601,270 @@ class TransformerDecoder(TransformerModule):
     @property
     def name(self) -> str:
         return "transformer"
+
+
+class TransformerDecoderOnlyLayer(nn.TransformerDecoderLayer):
+    """Transformer decoder layer for decoder-only variant.
+
+    Here we skip the multi-head cross-attention wrt the encoder.
+    This module thus expects no memory in the forward pass, and applies only
+    2 layer norms."""
+
+    def __init__(
+        self,
+        d_model: int,
+        nhead: int,
+        dim_feedforward: int = 2048,
+        dropout: float = 0.1,
+        activation: Union[str, Callable[[torch.Tensor], torch.Tensor]] = torch.nn.functional.relu,
+        layer_norm_eps: float = 1e-5,
+        batch_first: bool = False,
+        norm_first: bool = False,
+        device=None,
+        dtype=None
+    ) -> None:
+        factory_kwargs = {'device': device, 'dtype': dtype}
+        super(nn.TransformerDecoderLayer, self).__init__()
+        self.self_attn = nn.MultiheadAttention(
+            d_model,
+            nhead,
+            dropout=dropout,
+            batch_first=batch_first,
+            **factory_kwargs
+        )
+        # Implementation of Feedforward model
+        self.linear1 = nn.Linear(d_model,dim_feedforward, **factory_kwargs)
+        self.dropout = nn.Dropout(dropout)
+        self.linear2 = nn.Linear(dim_feedforward, d_model, **factory_kwargs)
+
+        self.norm_first = norm_first
+        self.norm1 = nn.LayerNorm(d_model, eps=layer_norm_eps, **factory_kwargs)
+        self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps, **factory_kwargs)
+        self.dropout1 = nn.Dropout(dropout)
+        self.dropout2 = nn.Dropout(dropout)
+        self.dropout3 = nn.Dropout(dropout)
+
+        # Legacy string support for activation function.
+        if isinstance(activation, str):
+            self.activation = nn.modules.transformer._get_activation_fn(activation)
+        else:
+            self.activation = activation
+
+    def forward(
+        self,
+        target: torch.Tensor,
+        target_mask: Optional[torch.Tensor] = None,
+        target_key_padding_mask: Optional[torch.Tensor] = None,
+        target_is_causal: bool = False, # TODO: Ignored until torch 2.0 changes.
+    ) -> torch.Tensor:
+        """Pass the inputs (and mask) through the decoder layer.
+
+        Args:
+            target (torch.Tensor): the sequence to the decoder layer.
+            target_mask (Optional[torch.Tensor], optional): the mask for the
+                target sequence. Defaults to None.
+            target_key_padding_mask (Optional[torch.Tensor], optional): the
+                mask for the target keys per batch. Defaults to None.
+            target_is_causal (bool, optional): If specified, applies a causal
+                mask as target mask. Mutually exclusive with providing
+                target_mask. Defaults to False.
+
+        Returns:
+            torch.Tensor: Ouput tensor.
+        """
+        x = target
+        if self.norm_first:
+            x = self.norm1(x)
+            x = x + self._sa_block(
+                x,
+                target_mask,
+                target_key_padding_mask,
+                # FIXME: Introduced in torch 2.0.
+                # is_causal=target_is_causal
+            )
+            x = x + self._ff_block(self.norm2(x))
+        else:
+            x = self.norm1(
+                x
+                + self._sa_block(
+                    x,
+                    target_mask,
+                    target_key_padding_mask,
+                    # FIXME: Introduced in torch 2.0.
+                    # is_causal=target_is_causal
+                )
+            )
+            x = self.norm2(x + self._ff_block(x))
+        return x
+
+
+class TransformerDecoderOnlyModule(nn.TransformerDecoder):
+
+    def forward(
+        self,
+        tgt: torch.Tensor,
+        tgt_mask: Optional[torch.Tensor] = None,
+        tgt_key_padding_mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """Pass the inputs (and mask) through the decoder layer in turn.
+
+        This is the same as the torch nn.TransformerDecoder except it does not expect
+        `memory` from the encoder to pass along to the layers.
+
+        Args:
+            tgt: the sequence to the decoder (required).
+            tgt_mask: the mask for the tgt sequence (optional).
+            tgt_key_padding_mask: the mask for the tgt keys per batch (optional).
+        """
+        output = tgt
+
+        for mod in self.layers:
+            # TODO: Resolve tgt/target mismatch
+            output = mod(
+                output,
+                target_mask=tgt_mask,
+                target_key_padding_mask=tgt_key_padding_mask,
+            )
+
+        if self.norm is not None:
+            output = self.norm(output)
+
+        return output
+
+
+class TransformerDecoderOnly(TransformerDecoder):
+
+    def get_module(self) -> nn.Module:
+
+        # NOTE: We use the torch encoder as it does not require the cross-attention
+        #       but for us, this will function as a decoder.
+
+        # layer = nn.TransformerEncoderLayer(
+        #     d_model=self.decoder_input_size,
+        #     nhead=self.source_attention_heads,
+        #     dim_feedforward=self.hidden_size,
+        #     dropout=self.dropout,
+        #     activation="relu",
+        #     norm_first=True,
+        #     batch_first=True,
+        # )
+        # return nn.TransformerEncoder(
+        #     encoder_layer=layer,
+        #     num_layers=self.layers,
+        #     norm=nn.LayerNorm(self.embedding_size),
+        # )
+
+        layer = TransformerDecoderOnlyLayer(
+            d_model=self.decoder_input_size,
+            nhead=self.source_attention_heads,
+            dim_feedforward=self.hidden_size,
+            dropout=self.dropout,
+            activation="relu",
+            norm_first=True,
+            batch_first=True,
+        )
+        return TransformerDecoderOnlyModule(
+            decoder_layer=layer,
+            num_layers=self.layers,
+            norm=nn.LayerNorm(self.embedding_size),
+        )
+    
+    def _get_prefix_mask(
+        self,
+        batch_size,
+        target_sequence_length,
+        pad_lengths,
+        prefix_lengths,
+    ):
+        # FIXME:
+        # -> batch_size x seq_len x seq_len.
+        causal_mask = self.generate_square_subsequent_mask(
+            target_sequence_length
+        ).repeat(batch_size, 1, 1)
+        # Unmasks the prefix
+        # TODO: This also unmasks the PADs since we pad left side now, is this breaking things?
+        #   Ideally, we could unmask from last_pad:prefix_length
+        for b in range(batch_size):
+            causal_mask[b, :(pad_lengths[b] + prefix_lengths[b]), :(pad_lengths[b] + prefix_lengths[b])] = 0.0
+
+        # Repeats per attention head.
+        # return causal_mask.to(self.device).repeat(self.source_attention_heads, 1, 1)
+        return torch.repeat_interleave(causal_mask, self.source_attention_heads, dim=0).to(self.device)
+
+    def forward(
+        self,
+        target: torch.Tensor,
+        target_mask: torch.Tensor,
+        prefix_lengths: torch.Tensor=None,
+    ) -> torch.Tensor:
+        """Performs single pass of decoder only module.
+
+        Returns:
+            torch.Tensor: torch tensor of decoder outputs.
+        """
+        target_embedding = self.embed(target)
+        target_sequence_length = target.size(1)
+        if prefix_lengths is not None:
+            prefix_mask = self._get_prefix_mask(
+                target.size(0),
+                target_sequence_length,
+                torch.sum(target == self.pad_idx, dim=1),
+                prefix_lengths,
+            )
+        else:
+            msg = "No mask or prefix lengths provided."
+            raise Exception(msg)
+        # -> B x seq_len x d_model.
+        # output = self.module(
+        #     target_embedding,
+        #     mask=prefix_mask,
+        #     src_key_padding_mask=target_mask,
+        # )
+        # FOR using TransformerDecoder with dummy memory.
+        # memory=torch.ones(target_embedding.size(0), 1, target_embedding.size(2)),
+
+        output = self.module(
+            tgt=target_embedding,
+            tgt_mask=prefix_mask,
+            tgt_key_padding_mask=target_mask,
+        )
+        # print("Mask info")
+        # prefix_count = (prefix_mask == 0).sum(dim=2)
+        # not_prefix_count = (prefix_mask == float("-inf")).sum(dim=2)
+        # tgt_mask_count = (target_mask == 0).sum(dim=1)
+        # tgt_not_mask_count = target_mask.sum(dim=1)
+        # i = 19
+        # print(i)
+        # print(prefix_count[i])
+        # print(not_prefix_count[i])
+        # print(tgt_mask_count[i])
+        # print(tgt_not_mask_count[i])
+        # print(target[i])
+        # print(target_mask[i])
+        # print("TARGET")
+        # print(target[18, :])
+        # print("CAUSAL MASK")
+        # print(prefix_lengths[18])
+        # # print(prefix_mask[5, :, :])
+        # print(prefix_mask[18])
+        # print((prefix_mask == 0).sum(dim=2)[18])
+        # print(target_mask[18])
+        # print(output[18])
+
+        # print("NAN ONE")
+        # print("TARGET")
+        # print(target[19, :])
+        # print("CAUSAL MASK")
+        # print(prefix_lengths[19])
+        # print((prefix_mask == 0).sum(dim=2)[19])
+        # print(prefix_mask[19])
+        # print(target_mask[19])
+        # print(output[19])
+        return base.ModuleOutput(output, embeddings=target_embedding)
+    
+    @property
+    def name(self) -> str:
+        return "decoder-only transformer"
 
 
 class TransformerPointerDecoder(TransformerDecoder):

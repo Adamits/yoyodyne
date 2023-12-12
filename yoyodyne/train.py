@@ -109,9 +109,16 @@ def get_datamodule_from_argparse_args(
         "pointer_generator_transformer",
         "transducer",
     ]
-    datamodule = data.DataModule(
+    is_decoder_only = args.arch in [
+        "decoder_only_transformer"
+    ]
+    data_module_cls = data.DataModule
+    # if is_decoder_only:
+    #     data_module_cls = data.DecoderOnlyDataModule
+    datamodule = data_module_cls(
         train=args.train,
         val=args.val,
+        is_decoder_only=is_decoder_only,
         batch_size=args.batch_size,
         source_col=args.source_col,
         features_col=args.features_col,
@@ -325,6 +332,7 @@ def main() -> None:
     trainer = get_trainer_from_argparse_args(args)
     datamodule = get_datamodule_from_argparse_args(args)
     model = get_model_from_argparse_args(args, datamodule)
+    print(model.decoder.embeddings)
     # Tuning options. Batch autoscaling is unsupported; LR tuning logs the
     # suggested value and then exits.
     if args.auto_scale_batch_size:
