@@ -1,6 +1,6 @@
 """Data modules."""
 
-from typing import Iterator, Optional, Set
+from typing import Iterator, List, Optional, Set
 
 import pytorch_lightning as pl
 from torch.utils import data
@@ -35,6 +35,7 @@ class DataModule(pl.LightningDataModule):
         features_sep: str = defaults.FEATURES_SEP,
         target_sep: str = defaults.TARGET_SEP,
         # Collator options.
+        is_decoder_only: bool = False,
         batch_size=defaults.BATCH_SIZE,
         separate_features: bool = False,
         max_source_length: int = defaults.MAX_SOURCE_LENGTH,
@@ -55,20 +56,33 @@ class DataModule(pl.LightningDataModule):
         self.val = val
         self.predict = predict
         self.test = test
+        self.is_decoder_only = is_decoder_only
         self.batch_size = batch_size
         self.separate_features = separate_features
         self.index = index if index is not None else self._make_index()
-        self.collator = collators.Collator(
-            pad_idx=self.index.pad_idx,
-            has_features=self.has_features,
-            has_target=self.has_target,
-            separate_features=separate_features,
-            features_offset=self.index.source_vocab_size
-            if self.has_features
-            else 0,
-            max_source_length=max_source_length,
-            max_target_length=max_target_length,
-        )
+        if self.is_decoder_only:
+            self.collator = collators.DecoderOnlyCollator(
+                pad_idx=self.index.pad_idx,
+                has_features=self.has_features,
+                has_target=self.has_target,
+                separate_features=separate_features,
+                features_offset=self.index.source_vocab_size
+                if self.has_features
+                else 0,
+                max_length=max_source_length + max_target_length,
+            )
+        else:
+            self.collator = collators.Collator(
+                pad_idx=self.index.pad_idx,
+                has_features=self.has_features,
+                has_target=self.has_target,
+                separate_features=separate_features,
+                features_offset=self.index.source_vocab_size
+                if self.has_features
+                else 0,
+                max_source_length=max_source_length,
+                max_target_length=max_target_length,
+            )
 
     def _make_index(self) -> indexes.Index:
         # Computes index.

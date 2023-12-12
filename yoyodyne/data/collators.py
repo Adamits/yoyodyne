@@ -183,3 +183,103 @@ class Collator:
             default=defaults.MAX_TARGET_LENGTH,
             help="Maximum target string length. Default: %(default)s.",
         )
+
+
+@dataclasses.dataclass
+class DecoderOnlyCollator(Collator):
+    """Pads data."""
+
+    pad_idx: int
+    has_features: bool
+    has_target: bool
+    features_offset: int
+    max_length: int = defaults.MAX_SOURCE_LENGTH
+
+    def _length_error(self, padded_length: int) -> None:
+        """Callback function to raise the error when the padded length of the
+        source batch is greater than the `max_source_length` allowed.
+
+        Args:
+            padded_length (int): The length of the the padded tensor.
+
+        Raises:
+            LengthError.
+        """
+        if padded_length > self.max_length:
+            raise LengthError(
+                f"The length of a sample ({padded_length}) is greater "
+                f"than the `--max_length` specified "
+                f"({self.max_length})"
+            )
+
+    def concatenate_source_and_features(
+        self,
+        itemlist: List[datasets.Item],
+    ) -> List[torch.Tensor]:
+        """Concatenates source and feature tensors."""
+        return [
+            (
+                torch.cat((item.source, item.features + self.features_offset))
+                if item.has_features
+                else item.source
+            )
+            for item in itemlist
+        ]
+
+    def pad_target(
+        self, itemlist: List[datasets.Item]
+    ) -> batches.PaddedTensor:
+        """Pads target.
+
+        For DecoderOnly setup, we still concat source and target, but we replace
+        the source indices with PADs, as we do not want to backprop a loss for these.
+
+        Args:
+            itemlist (List[datasets.Item]).
+
+        Returns:
+            batches.PaddedTensor.
+        """
+        target = [item.target for item in itemlist] if self.has_target else None
+        return batches.DecoderOnlyPaddedTensor(
+            self.concatenate_source_and_features(itemlist),
+            target,
+            self.pad_idx,
+            is_target=True,
+            length_msg_callback=self._length_error,
+        )
+    
+    def pad(
+        self,
+        itemlist: List[datasets.Item],
+    ) -> batches.PaddedTensor:
+        """Pads concatenated source and features.
+
+        Args:
+            itemlist (List[datasets.Item]).
+
+        Returns:
+            batches.PaddedTensor.
+        """
+        target = [item.target for item in itemlist] if self.has_target else None
+        return batches.DecoderOnlyPaddedTensor(
+            self.concatenate_source_and_features(itemlist),
+            target,
+            self.pad_idx,
+            length_msg_callback=self._length_error,
+        )
+
+    def __call__(self, itemlist: List[datasets.Item]) -> batches.PaddedBatch:
+        """Pads all elements of an itemlist.
+
+        Args:
+            itemlist (List[datasets.Item]).
+
+        Returns:
+            batches.PaddedBatch.
+        """
+        padded_target = self.pad_target(itemlist) if self.has_target else None
+        return batches.DecoderOnlyPaddedBatch(
+            self.pad(itemlist),
+            target = padded_target,
+        )
