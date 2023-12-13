@@ -226,9 +226,9 @@ class DecoderOnlyCollator(Collator):
             for item in itemlist
         ]
 
-    def pad_target(
+    def pad_masked_sequence(
         self, itemlist: List[datasets.Item]
-    ) -> batches.PaddedTensor:
+    ) -> batches.DecoderOnlyPaddedTensor:
         """Pads target.
 
         For DecoderOnly setup, we still concat source and target, but we replace
@@ -238,28 +238,70 @@ class DecoderOnlyCollator(Collator):
             itemlist (List[datasets.Item]).
 
         Returns:
-            batches.PaddedTensor.
+            batches.DecoderOnlyPaddedTensor.
         """
-        target = [item.target for item in itemlist] if self.has_target else None
+        target = [item.target[1:] for item in itemlist] if self.has_target else None
         return batches.DecoderOnlyPaddedTensor(
             self.concatenate_source_and_features(itemlist),
             target,
             self.pad_idx,
-            is_target=True,
+            is_masked_sequence=True,
             length_msg_callback=self._length_error,
+        )
+    
+    def pad_source(
+        self, itemlist: List[datasets.Item]
+    ) -> batches.DecoderOnlyPaddedTensor:
+        """Pads target.
+
+        For DecoderOnly setup, we still concat source and target, but we replace
+        the source indices with PADs, as we do not want to backprop a loss for these.
+
+        Args:
+            itemlist (List[datasets.Item]).
+
+        Returns:
+            batches.DecoderOnlyPaddedTensor.
+        """
+        target = None
+        return batches.DecoderOnlyPaddedTensor(
+            self.concatenate_source_and_features(itemlist),
+            target,
+            self.pad_idx,
+            length_msg_callback=self._length_error,
+        )
+    
+    def pad_target(
+        self, itemlist: List[datasets.Item]
+    ) -> batches.DecoderOnlyPaddedTensor:
+        """Pads source.
+
+        Args:
+            itemlist (List[datasets.Item]).
+
+        Returns:
+            batches.DecoderOnlyPaddedTensor.
+        """
+        source = None
+        return batches.DecoderOnlyPaddedTensor(
+            source,
+            [item.target for item in itemlist],
+            self.pad_idx,
+            is_target=True,
+            length_msg_callback=self._target_length_warning,
         )
     
     def pad(
         self,
         itemlist: List[datasets.Item],
-    ) -> batches.PaddedTensor:
+    ) -> batches.DecoderOnlyPaddedTensor:
         """Pads concatenated source and features.
 
         Args:
             itemlist (List[datasets.Item]).
 
         Returns:
-            batches.PaddedTensor.
+            batches.DecoderOnlyPaddedTensor.
         """
         target = [item.target for item in itemlist] if self.has_target else None
         return batches.DecoderOnlyPaddedTensor(
@@ -269,17 +311,25 @@ class DecoderOnlyCollator(Collator):
             length_msg_callback=self._length_error,
         )
 
-    def __call__(self, itemlist: List[datasets.Item]) -> batches.PaddedBatch:
+    def __call__(self, itemlist: List[datasets.Item]) -> batches.DecoderOnlyPaddedTensor:
         """Pads all elements of an itemlist.
 
         Args:
             itemlist (List[datasets.Item]).
 
         Returns:
-            batches.PaddedBatch.
+            batches.DecoderOnlyPaddedTensor.
         """
-        padded_target = self.pad_target(itemlist) if self.has_target else None
+        # Input during training
+        padded_sequence = self.pad(itemlist)
+        # Target during training; matches sequence but pads the prefix so those
+        # predictions are ignored in loss calculation
+        padded_masked_sequence = self.pad_masked_sequence(itemlist) if self.has_target else None
+        padded_target = self.pad_target(itemlist)
+        padded_source = self.pad_source(itemlist)
         return batches.DecoderOnlyPaddedBatch(
-            self.pad(itemlist),
+            padded_sequence,
+            masked_sequence = padded_masked_sequence,
+            source = padded_source,
             target = padded_target,
         )

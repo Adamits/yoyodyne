@@ -634,17 +634,9 @@ class BaseDecoderOnly(BaseEncoderDecoder):
         # -> B x seq_len x target_vocab_size.
         predictions = self(batch)
         # Target is the same as sequence but the prefix is pads.
-        target_padded = batch.target.padded
+        target_padded = batch.masked_sequence.padded
         # -> B x target_vocab_size x seq_len. For loss.
         predictions = predictions.transpose(1, 2)
-        print("TRAIN")
-        print("source")
-        print(batch.sequence.padded[0, :])
-        print("target")
-        print(target_padded[0, :])
-        print("pred")
-        print(predictions[0, :].argmax(dim=1))
-        print("="*30)
         # N = torch.isnan(predictions).sum(dim=2)
         # print(N.sum(dim=1))
         loss = self.loss_func(predictions, target_padded)
@@ -681,13 +673,19 @@ class BaseDecoderOnly(BaseEncoderDecoder):
         # -> B x seq_len x target_vocab_size.
         target_padded = batch.target.padded
         greedy_predictions = self(batch)
-        print("source")
-        print(batch.sequence.padded[0, :])
-        print("target")
-        print(target_padded[0, :])
-        print("pred")
-        print(greedy_predictions[0, :target_padded.size(1)].argmax(dim=1))
-        print("="*30)
+        # print("sequence")
+        # print(batch.sequence.padded[0])
+        # print("source")
+        # print(batch.source.padded[0])
+        # print("target")
+        # print(target_padded[0])
+        # print("pred")
+        # print(greedy_predictions[0, :].argmax(dim=1))
+        # print("pred truncated")
+        # print(greedy_predictions[0, :target_padded.size(1)].argmax(dim=1))
+        # # logging_preds = torch.softmax(greedy_predictions, dim=2)
+        # # print(logging_preds[0, :, 3])
+        # print("="*30)
         val_eval_item = self.evaluator.evaluate(
             greedy_predictions, target_padded, self.end_idx, self.pad_idx
         )

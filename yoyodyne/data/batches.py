@@ -98,6 +98,7 @@ class DecoderOnlyPaddedTensor(PaddedTensor):
     padded: torch.Tensor
     mask: torch.Tensor
     prefix_lengths: torch.Tensor
+    is_masked_sequence: Optional[bool]
     is_target: Optional[bool]
 
     def __init__(
@@ -105,38 +106,54 @@ class DecoderOnlyPaddedTensor(PaddedTensor):
         source_tensorlist: List[torch.Tensor],
         target_tensorlist: Optional[List[torch.Tensor]],
         pad_idx: int,
+        is_masked_sequence: Optional[bool]=False,
         is_target: Optional[bool] = False,
         length_msg_callback: Optional[Callable[[int], None]] = None,
         pad_len: Optional[int] = None,
     ):
         super(PaddedTensor, self).__init__()
+        self.is_masked_sequence = is_masked_sequence
         self.is_target = is_target
         # TODO: Ensure we do not have EOS on the source tensors already
         # TODO: Clean this up---make separate methods.
         if target_tensorlist is not None:
-            if pad_len is None:
-                pad_len = max(
-                    len(t1) + len(t2)
-                    for t1, t2 in zip(source_tensorlist, target_tensorlist)
-                )
-            if length_msg_callback is not None:
-                length_msg_callback(pad_len)
-            # Target tensors look the same as the source tensor, but we replace the source info
-            # with PADs for ignoring loss on them.
+            # Target for validation; contains JUST the actual target sequence.
             if self.is_target:
+                if pad_len is None:
+                    pad_len = max(len(t) for t in target_tensorlist)
+                if length_msg_callback is not None:
+                    length_msg_callback(pad_len)
                 tensors = torch.stack(
                     [
-                        self.pad_concat_tensors(t1, t2, pad_idx, pad_len, pad_indices = t1)
-                        for t1, t2 in zip(source_tensorlist, target_tensorlist)
+                        self.pad_tensor(t, pad_idx, pad_len)
+                        for t in target_tensorlist
                     ],
                 )
             else:
-                tensors = torch.stack(
-                    [
-                        self.pad_concat_tensors(t1, t2, pad_idx, pad_len)
+                if pad_len is None:
+                    pad_len = max(
+                        len(t1) + len(t2)
                         for t1, t2 in zip(source_tensorlist, target_tensorlist)
-                    ],
-                )
+                    )
+                if length_msg_callback is not None:
+                    length_msg_callback(pad_len)
+                # During training, target tensors look 
+                # the same as the source tensor, but we replace the source info
+                # with PADs for ignoring loss on them.
+                if self.is_masked_sequence:
+                    tensors = torch.stack(
+                        [
+                            self.pad_concat_tensors(t1, t2, pad_idx, pad_len, pad_indices = t1)
+                            for t1, t2 in zip(source_tensorlist, target_tensorlist)
+                        ],
+                    )
+                else:
+                    tensors = torch.stack(
+                        [
+                            self.pad_concat_tensors(t1, t2, pad_idx, pad_len)
+                            for t1, t2 in zip(source_tensorlist, target_tensorlist)
+                        ],
+                    )
         else:
             if pad_len is None:
                 pad_len = max(len(t) for t in source_tensorlist)
@@ -144,21 +161,49 @@ class DecoderOnlyPaddedTensor(PaddedTensor):
                 length_msg_callback(pad_len)
             tensors = torch.stack(
                 [
-                    self.pad_tensor(t, pad_idx, pad_len)
+                    self.pad_tensor_left(t, pad_idx, pad_len)
                     for t in source_tensorlist
                 ],
             )
         
-        # FIXME: We need to account for the left-paddding we now have.
+        # FIXME: We need to account for the left-padding we now have.
         #       Each batch should have a prefix length of num_pads + prefix_length.
         # pad_lens = torch.sum(tensors == pad_idx, dim=1)
-        self.prefix_lengths = [s.size(0) for s in source_tensorlist]
+        if self.is_target:
+            self.prefix_lengths = [0 for _ in target_tensorlist]
+        else:
+            self.prefix_lengths = [s.size(0) for s in source_tensorlist]
         self.register_buffer(
             "padded",
             tensors,
         )
         self.register_buffer("mask", tensors == pad_idx)
 
+    @staticmethod
+    def pad_tensor_left(
+        tensor: torch.Tensor,
+        pad_idx: int,
+        pad_max: int,
+        pad_indices: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """Pads a tensor.
+
+        Args:
+            source_tensor (torch.Tensor).
+            target_tensor (torch.Tensor).
+            pad_idx (int): padding index.
+            pad_max (int): desired tensor length.
+
+        Returns:
+            torch.Tensor.
+        """
+        padding = pad_max - len(tensor)
+        padded = nn.functional.pad(tensor, (padding, 0), "constant", pad_idx)
+        if pad_indices is not None:
+            padded[:padding + len(pad_indices)] = pad_idx
+
+        return padded
+    
     @staticmethod
     def pad_concat_tensors(
         source_tensor: torch.Tensor,
@@ -216,18 +261,24 @@ class PaddedBatch(nn.Module):
 
 
 class DecoderOnlyPaddedBatch(PaddedBatch):
-    """Padded bacth for decoder-only models.
+    """Padded batch for decoder-only models.
 
     This represents a padded batch. It is produced by the collator and fed to
     the trainer. We expect both a source and target tensor, which are then concatenated
     together, and the source tensor is tracked as the 'prefix' to an LM."""
 
-    sequence: PaddedTensor
-    target: PaddedTensor
+    sequence: DecoderOnlyPaddedTensor
+    masked_sequence: DecoderOnlyPaddedTensor
+    # For greedy decoding + eval.
+    # FIXME: Do this more elegantly...
+    source: DecoderOnlyPaddedTensor
+    target: DecoderOnlyPaddedTensor
 
-    def __init__(self, sequence, target):
+    def __init__(self, sequence, masked_sequence, source, target):
         super(PaddedBatch, self).__init__()
         self.register_module("sequence", sequence)
+        self.register_module("masked_sequence", masked_sequence)
+        self.register_module("source", source)
         self.register_module("target", target)
 
     def __len__(self) -> int:

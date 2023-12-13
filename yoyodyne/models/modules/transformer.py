@@ -776,7 +776,6 @@ class TransformerDecoderOnly(TransformerDecoder):
         pad_lengths,
         prefix_lengths,
     ):
-        # FIXME:
         # -> batch_size x seq_len x seq_len.
         causal_mask = self.generate_square_subsequent_mask(
             target_sequence_length
@@ -786,6 +785,7 @@ class TransformerDecoderOnly(TransformerDecoder):
         #   Ideally, we could unmask from last_pad:prefix_length
         for b in range(batch_size):
             causal_mask[b, :(pad_lengths[b] + prefix_lengths[b]), :(pad_lengths[b] + prefix_lengths[b])] = 0.0
+            # causal_mask[b, pad_lengths[b]:(pad_lengths[b]+prefix_lengths[b]-1), pad_lengths[b]:(pad_lengths[b]+prefix_lengths[b]-1)] = 0.0
 
         # Repeats per attention head.
         # return causal_mask.to(self.device).repeat(self.source_attention_heads, 1, 1)
@@ -820,9 +820,8 @@ class TransformerDecoderOnly(TransformerDecoder):
         #     mask=prefix_mask,
         #     src_key_padding_mask=target_mask,
         # )
-        # FOR using TransformerDecoder with dummy memory.
+        # For using TransformerDecoder with dummy memory.
         # memory=torch.ones(target_embedding.size(0), 1, target_embedding.size(2)),
-
         output = self.module(
             tgt=target_embedding,
             tgt_mask=prefix_mask,
@@ -830,26 +829,28 @@ class TransformerDecoderOnly(TransformerDecoder):
         )
         # print("Mask info")
         # prefix_count = (prefix_mask == 0).sum(dim=2)
-        # not_prefix_count = (prefix_mask == float("-inf")).sum(dim=2)
+        # # not_prefix_count = (prefix_mask == float("-inf")).sum(dim=2)
         # tgt_mask_count = (target_mask == 0).sum(dim=1)
-        # tgt_not_mask_count = target_mask.sum(dim=1)
-        # i = 19
-        # print(i)
+        # # tgt_not_mask_count = target_mask.sum(dim=1)
+        # # i = 19
+        # i=7
+        # # print(i)
         # print(prefix_count[i])
-        # print(not_prefix_count[i])
-        # print(tgt_mask_count[i])
-        # print(tgt_not_mask_count[i])
-        # print(target[i])
+        # print(prefix_lengths[i])
+        # # print(not_prefix_count[i])
+        # print("target mask count", tgt_mask_count[i])
+        # # print(tgt_not_mask_count[i])
+        # print("target", target[i])
         # print(target_mask[i])
-        # print("TARGET")
-        # print(target[18, :])
-        # print("CAUSAL MASK")
-        # print(prefix_lengths[18])
-        # # print(prefix_mask[5, :, :])
-        # print(prefix_mask[18])
-        # print((prefix_mask == 0).sum(dim=2)[18])
-        # print(target_mask[18])
-        # print(output[18])
+        # # print("TARGET")
+        # # print(target[18, :])
+        # # print("CAUSAL MASK")
+        # # print(prefix_lengths[18])
+        # # # print(prefix_mask[5, :, :])
+        # # print(prefix_mask[18])
+        # # print((prefix_mask == 0).sum(dim=2)[18])
+        # # print(target_mask[18])
+        # # print(output[18])
 
         # print("NAN ONE")
         # print("TARGET")

@@ -264,9 +264,11 @@ class DecoderOnlyTransformer(base.BaseDecoderOnly):
         for _ in range(self.max_target_length - sequence.size(1)):
             if pred is not None:
                 sequence = torch.cat((sequence, pred.unsqueeze(1)), dim=1)
-            # Uses a dummy mask of all ones.
-            sequence_mask = torch.ones_like(sequence, dtype=torch.float)
-            sequence_mask = sequence_mask == 0
+                # Appends to key padding mask.
+                sequence_mask = torch.cat(
+                    (sequence_mask, torch.zeros((batch_size, 1), dtype=torch.float)),
+                    dim=1
+                )
             # TODO: Here we shouldn't need a causal mask at all.
             #       at each timestep, we can attend to everything.
             decoder_output = self.decoder(
@@ -276,6 +278,12 @@ class DecoderOnlyTransformer(base.BaseDecoderOnly):
             ).output
             logits = self.classifier(decoder_output)
             last_output = logits[:, -1, :]  # Ignores EOS.
+            # In the first iteration, we get all outputs, as we want to include
+            # the prefix.
+            # if pred is None:
+            #     outputs.extend(list(logits.transpose(0,1)))
+            # else:
+            #     outputs.append(last_output)
             outputs.append(last_output)
             # -> B x 1 x 1
             _, pred = torch.max(last_output, dim=1)
@@ -325,15 +333,13 @@ class DecoderOnlyTransformer(base.BaseDecoderOnly):
                 batch.sequence.padded, batch.sequence.mask, batch.sequence.prefix_lengths
             ).output
             logits = self.classifier(decoder_output)
-            # FIXME: we do not want to backprop the prefix predicitons as they are given already.
-            # Actually this should break the loss func, which expects the size of the targets.
-            output = logits #logits[:, :-1, :]  # Ignore EOS.
+            output = logits[:, :-1, :]  # Ignore EOS.
         else:
             # -> B x seq_len x output_size.
             output = self._decode_greedy(
-                batch.sequence.padded,
-                batch.sequence.mask,
-                batch.sequence.prefix_lengths,
+                batch.source.padded,
+                batch.source.mask,
+                batch.source.prefix_lengths,
             )
         return output
 
