@@ -141,6 +141,8 @@ class Dataset(data.Dataset):
             List[str]: Decoded symbols.
         """
         for idx in indices.cpu().numpy():
+            print(idx)
+            print(self.index.special_idx, idx[0])
             yield [
                 symbol_map.symbol(c)
                 for c in idx

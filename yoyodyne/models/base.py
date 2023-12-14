@@ -560,6 +560,8 @@ class BaseDecoderOnly(BaseEncoderDecoder):
         source_vocab_size,
         target_vocab_size,
         source_encoder_cls,
+        dataset, # For debugging
+        val_out="validation_preds", # For debugging
         features_encoder_cls=None,
         features_vocab_size=0,
         beta1=defaults.BETA1,
@@ -587,6 +589,8 @@ class BaseDecoderOnly(BaseEncoderDecoder):
         self.end_idx = end_idx
         self.source_vocab_size = source_vocab_size
         self.features_vocab_size = features_vocab_size
+        self.dataset = dataset
+        self.val_out = val_out
         self.target_vocab_size = target_vocab_size
         self.beta1 = beta1
         self.beta2 = beta2
@@ -610,7 +614,7 @@ class BaseDecoderOnly(BaseEncoderDecoder):
         self.decoder = self.get_decoder()
         # Saves hyperparameters for PL checkpointing.
         self.save_hyperparameters(
-            ignore=["decoder"]
+            ignore=["decoder", "dataset"]
         )
         util.log_info(f"Model: {self.name}")
     
@@ -637,6 +641,16 @@ class BaseDecoderOnly(BaseEncoderDecoder):
         target_padded = batch.masked_sequence.padded
         # -> B x target_vocab_size x seq_len. For loss.
         predictions = predictions.transpose(1, 2)
+        # print("TRAIN")
+        # print("source")
+        # print(batch.sequence.padded[0, :])
+        # print("target")
+        # print(target_padded[0, :])
+        # print("pred")
+        # # logging_preds = torch.softmax(predictions, dim=1)
+        # print(predictions[0].argmax(dim=0))
+        # # print(logging_preds[0, 3, :])
+        # print("="*30)
         # N = torch.isnan(predictions).sum(dim=2)
         # print(N.sum(dim=1))
         loss = self.loss_func(predictions, target_padded)
@@ -673,19 +687,17 @@ class BaseDecoderOnly(BaseEncoderDecoder):
         # -> B x seq_len x target_vocab_size.
         target_padded = batch.target.padded
         greedy_predictions = self(batch)
-        # print("sequence")
-        # print(batch.sequence.padded[0])
-        # print("source")
-        # print(batch.source.padded[0])
-        # print("target")
-        # print(target_padded[0])
-        # print("pred")
-        # print(greedy_predictions[0, :].argmax(dim=1))
-        # print("pred truncated")
-        # print(greedy_predictions[0, :target_padded.size(1)].argmax(dim=1))
-        # # logging_preds = torch.softmax(greedy_predictions, dim=2)
-        # # print(logging_preds[0, :, 3])
-        # print("="*30)
+        print("sequence")
+        print(batch.sequence.padded[0])
+        print("source")
+        print(batch.source.padded[0])
+        print("target")
+        print(target_padded[0])
+        print("pred")
+        print(greedy_predictions[0, :].argmax(dim=1))
+        # logging_preds = torch.softmax(greedy_predictions, dim=2)
+        # print(logging_preds[0, :, 3])
+        print("="*30)
         val_eval_item = self.evaluator.evaluate(
             greedy_predictions, target_padded, self.end_idx, self.pad_idx
         )
@@ -695,5 +707,9 @@ class BaseDecoderOnly(BaseEncoderDecoder):
         greedy_predictions = torch.narrow(
             greedy_predictions, 2, 0, target_padded.size(1)
         )
+        with open(self.val_out, "a") as out:
+            for p in self.dataset.decode_target(greedy_predictions.argmax(dim=1)):
+                print(p, file=out)
+
         loss = self.loss_func(greedy_predictions, target_padded)
         return {"val_eval_item": val_eval_item, "val_loss": loss}

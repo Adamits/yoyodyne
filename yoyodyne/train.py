@@ -213,6 +213,7 @@ def get_model_from_argparse_args(
         scheduler=args.scheduler,
         scheduler_kwargs=scheduler_kwargs,
         source_encoder_cls=source_encoder_cls,
+        dataset=datamodule.val_dataloader().dataset,
         source_vocab_size=source_vocab_size,
         start_idx=datamodule.index.start_idx,
         target_vocab_size=datamodule.index.target_vocab_size,

@@ -828,12 +828,11 @@ class TransformerDecoderOnly(TransformerDecoder):
             tgt_key_padding_mask=target_mask,
         )
         # print("Mask info")
-        # prefix_count = (prefix_mask == 0).sum(dim=2)
-        # # not_prefix_count = (prefix_mask == float("-inf")).sum(dim=2)
-        # tgt_mask_count = (target_mask == 0).sum(dim=1)
-        # # tgt_not_mask_count = target_mask.sum(dim=1)
-        # # i = 19
-        # i=7
+        prefix_count = (prefix_mask == 0).sum(dim=2)
+        # not_prefix_count = (prefix_mask == float("-inf")).sum(dim=2)
+        tgt_mask_count = (target_mask == 1).sum(dim=1)
+        # i = 19
+        # i=0
         # # print(i)
         # print(prefix_count[i])
         # print(prefix_lengths[i])
