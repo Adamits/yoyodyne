@@ -240,7 +240,7 @@ class DecoderOnlyCollator(Collator):
         Returns:
             batches.DecoderOnlyPaddedTensor.
         """
-        target = [item.target[1:] for item in itemlist] if self.has_target else None
+        target = [item.target[:-1] for item in itemlist] if self.has_target else None
         return batches.DecoderOnlyPaddedTensor(
             self.concatenate_source_and_features(itemlist),
             target,
