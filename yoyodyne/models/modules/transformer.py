@@ -832,13 +832,13 @@ class TransformerDecoderOnly(TransformerDecoder):
         # not_prefix_count = (prefix_mask == float("-inf")).sum(dim=2)
         tgt_mask_count = (target_mask == 1).sum(dim=1)
         # i = 19
-        # i=0
+        i=0
         # # print(i)
-        # print(prefix_mask[0])
+        # print(prefix_mask[i])
         # print(prefix_count[i])
         # print(prefix_lengths[i])
         # # print(not_prefix_count[i])
-        # print("target mask count", tgt_mask_count[i])
+        # # print("target mask count", tgt_mask_count[i])
         # # print(tgt_not_mask_count[i])
         # print("target", target[i])
         # print(target_mask[i])

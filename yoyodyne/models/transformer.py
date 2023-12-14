@@ -257,22 +257,24 @@ class DecoderOnlyTransformer(base.BaseDecoderOnly):
     ):
         # The output distributions to be returned.
         outputs = []
-        pred = torch.tensor(
-            [self.start_idx for _ in range(sequence.size(0))],
-            device=self.device,
-        )
+        pred = None
+        # torch.tensor(
+        #     [self.start_idx for _ in range(sequence.size(0))],
+        #     device=self.device,
+        # )
         batch_size = sequence.size(0)
         # Tracking when each sequence has decoded an EOS.
         finished = torch.zeros(batch_size, device=self.device)
         # TODO: Need to get the max_length stuff right
         seq_size = sequence.size(-1)
         for _ in range(self.max_target_length - seq_size):
-            sequence = torch.cat((sequence, pred.unsqueeze(1)), dim=1)
-            # Appends to key padding mask.
-            sequence_mask = torch.cat(
-                (sequence_mask, torch.zeros((batch_size, 1), dtype=torch.bool, device=self.device)),
-                dim=1
-            )
+            if pred is not None:
+                sequence = torch.cat((sequence, pred.unsqueeze(1)), dim=1)
+                # Appends to key padding mask.
+                sequence_mask = torch.cat(
+                    (sequence_mask, torch.zeros((batch_size, 1), dtype=torch.bool, device=self.device)),
+                    dim=1
+                )
             # TODO: Here we shouldn't need a causal mask at all.
             #       at each timestep, we can attend to everything.
             decoder_output = self.decoder(
