@@ -253,6 +253,7 @@ class DecoderOnlyTransformer(base.BaseDecoderOnly):
         sequence: torch.Tensor,
         sequence_mask: torch.Tensor,
         prefix_lengths: torch.Tensor,
+        targets: Optional[torch.Tensor],
     ):
         # The output distributions to be returned.
         outputs = []
@@ -263,8 +264,8 @@ class DecoderOnlyTransformer(base.BaseDecoderOnly):
         batch_size = sequence.size(0)
         # Tracking when each sequence has decoded an EOS.
         finished = torch.zeros(batch_size, device=self.device)
-        seq_size = sequence.size(1)
         # TODO: Need to get the max_length stuff right
+        seq_size = sequence.size(-1)
         for _ in range(self.max_target_length - seq_size):
             sequence = torch.cat((sequence, pred.unsqueeze(1)), dim=1)
             # Appends to key padding mask.
@@ -294,11 +295,13 @@ class DecoderOnlyTransformer(base.BaseDecoderOnly):
             finished = torch.logical_or(
                 finished, (pred == self.end_idx)
             )
-            # Breaks when all sequences have predicted an EOS symbol.
-            # Here it is nontrivial to check if we have the target, and thus
-            # we have no early stopping trick for validation.
+            # Breaks when all sequences have predicted an EOS symbol. If we
+            # have a target (and are thus computing loss), we only break when
+            # we have decoded at least the the same number of steps as the
+            # target length.
             if finished.all():
-                break
+                if targets is None or len(outputs) >= targets.size(-1):
+                    break
         # -> B x seq_len x target_vocab_size.
         return torch.stack(outputs).transpose(0, 1)
     
@@ -341,6 +344,7 @@ class DecoderOnlyTransformer(base.BaseDecoderOnly):
                 batch.source.padded,
                 batch.source.mask,
                 batch.source.prefix_lengths,
+                batch.sequence.padded if batch.sequence else None
             )
         return output
 

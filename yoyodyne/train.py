@@ -86,7 +86,7 @@ def get_trainer_from_argparse_args(
     """
     return pl.Trainer.from_argparse_args(
         args,
-        num_sanity_val_steps=0,
+        # num_sanity_val_steps=0,
         callbacks=_get_callbacks(args.save_top_k, args.patience),
         default_root_dir=args.model_dir,
         enable_checkpointing=True,
