@@ -63,6 +63,7 @@ class DataModule(pl.LightningDataModule):
         if self.is_decoder_only:
             self.collator = collators.DecoderOnlyCollator(
                 pad_idx=self.index.pad_idx,
+                start_idx=self.index.start_idx,
                 has_features=self.has_features,
                 has_target=self.has_target,
                 separate_features=separate_features,
@@ -74,6 +75,7 @@ class DataModule(pl.LightningDataModule):
         else:
             self.collator = collators.Collator(
                 pad_idx=self.index.pad_idx,
+                start_idx=self.index.start_idx,
                 has_features=self.has_features,
                 has_target=self.has_target,
                 separate_features=separate_features,
@@ -164,6 +166,13 @@ class DataModule(pl.LightningDataModule):
             )
 
     def _dataset(self, path: str) -> datasets.Dataset:
+        if self.is_decoder_only:
+            return datasets.DecoderOnlyDataset(
+                list(self.parser.samples(path)),
+                self.index,
+                self.parser,
+            )
+        
         return datasets.Dataset(
             list(self.parser.samples(path)),
             self.index,

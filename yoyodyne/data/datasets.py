@@ -229,3 +229,7 @@ class Dataset(data.Dataset):
         else:
             source = self.samples[idx]
             return Item(source=self.encode_source(source))
+        
+@dataclasses.dataclass
+class DecoderOnlyDataset(Dataset):
+    pass

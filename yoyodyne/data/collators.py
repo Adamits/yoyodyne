@@ -3,6 +3,7 @@
 import argparse
 import dataclasses
 from typing import List
+import copy
 
 import torch
 
@@ -19,6 +20,7 @@ class Collator:
     """Pads data."""
 
     pad_idx: int
+    start_idx: int
     has_features: bool
     has_target: bool
     separate_features: bool
@@ -189,10 +191,6 @@ class Collator:
 class DecoderOnlyCollator(Collator):
     """Pads data."""
 
-    pad_idx: int
-    has_features: bool
-    has_target: bool
-    features_offset: int
     max_length: int = defaults.MAX_SOURCE_LENGTH
 
     def _length_error(self, padded_length: int) -> None:
@@ -240,7 +238,10 @@ class DecoderOnlyCollator(Collator):
         Returns:
             batches.DecoderOnlyPaddedTensor.
         """
-        target = [item.target[:-1] for item in itemlist] if self.has_target else None
+        target = [item.target for item in itemlist] if self.has_target else None
+        itemlist = copy.deepcopy(itemlist)
+        for item in itemlist:
+            item.source = item.source[1:]
         return batches.DecoderOnlyPaddedTensor(
             self.concatenate_source_and_features(itemlist),
             target,
@@ -303,7 +304,7 @@ class DecoderOnlyCollator(Collator):
         Returns:
             batches.DecoderOnlyPaddedTensor.
         """
-        target = [item.target for item in itemlist] if self.has_target else None
+        target = [item.target[:-1] for item in itemlist] if self.has_target else None
         return batches.DecoderOnlyPaddedTensor(
             self.concatenate_source_and_features(itemlist),
             target,

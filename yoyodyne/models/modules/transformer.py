@@ -834,6 +834,7 @@ class TransformerDecoderOnly(TransformerDecoder):
         # i = 19
         # i=0
         # # print(i)
+        # print(prefix_mask[0])
         # print(prefix_count[i])
         # print(prefix_lengths[i])
         # # print(not_prefix_count[i])

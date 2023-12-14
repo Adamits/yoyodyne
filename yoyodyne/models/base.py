@@ -687,17 +687,17 @@ class BaseDecoderOnly(BaseEncoderDecoder):
         # -> B x seq_len x target_vocab_size.
         target_padded = batch.target.padded
         greedy_predictions = self(batch)
-        print("sequence")
-        print(batch.sequence.padded[0])
-        print("source")
-        print(batch.source.padded[0])
-        print("target")
-        print(target_padded[0])
-        print("pred")
-        print(greedy_predictions[0, :].argmax(dim=1))
-        # logging_preds = torch.softmax(greedy_predictions, dim=2)
-        # print(logging_preds[0, :, 3])
-        print("="*30)
+        # print("sequence")
+        # print(batch.sequence.padded[0])
+        # print("source")
+        # print(batch.source.padded[0])
+        # print("target")
+        # print(target_padded[0])
+        # print("pred")
+        # print(greedy_predictions[0, :].argmax(dim=1))
+        # # logging_preds = torch.softmax(greedy_predictions, dim=2)
+        # # print(logging_preds[0, :, 3])
+        # print("="*30)
         val_eval_item = self.evaluator.evaluate(
             greedy_predictions, target_padded, self.end_idx, self.pad_idx
         )

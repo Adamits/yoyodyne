@@ -256,19 +256,22 @@ class DecoderOnlyTransformer(base.BaseDecoderOnly):
     ):
         # The output distributions to be returned.
         outputs = []
-        pred = None
+        pred = torch.tensor(
+            [self.start_idx for _ in range(sequence.size(0))],
+            device=self.device,
+        )
         batch_size = sequence.size(0)
         # Tracking when each sequence has decoded an EOS.
         finished = torch.zeros(batch_size, device=self.device)
+        seq_size = sequence.size(1)
         # TODO: Need to get the max_length stuff right
-        for _ in range(self.max_target_length - sequence.size(1)):
-            if pred is not None:
-                sequence = torch.cat((sequence, pred.unsqueeze(1)), dim=1)
-                # Appends to key padding mask.
-                sequence_mask = torch.cat(
-                    (sequence_mask, torch.zeros((batch_size, 1), dtype=torch.bool, device=self.device)),
-                    dim=1
-                )
+        for _ in range(self.max_target_length - seq_size):
+            sequence = torch.cat((sequence, pred.unsqueeze(1)), dim=1)
+            # Appends to key padding mask.
+            sequence_mask = torch.cat(
+                (sequence_mask, torch.zeros((batch_size, 1), dtype=torch.bool, device=self.device)),
+                dim=1
+            )
             # TODO: Here we shouldn't need a causal mask at all.
             #       at each timestep, we can attend to everything.
             decoder_output = self.decoder(
@@ -291,13 +294,11 @@ class DecoderOnlyTransformer(base.BaseDecoderOnly):
             finished = torch.logical_or(
                 finished, (pred == self.end_idx)
             )
-            # Breaks when all sequences have predicted an EOS symbol. If we
-            # have a target (and are thus computing loss), we only break when
-            # we have decoded at least the the same number of steps as the
-            # target length.
+            # Breaks when all sequences have predicted an EOS symbol.
+            # Here it is nontrivial to check if we have the target, and thus
+            # we have no early stopping trick for validation.
             if finished.all():
-                if sequence is None or len(outputs) >= sequence.size(-1):
-                    break
+                break
         # -> B x seq_len x target_vocab_size.
         return torch.stack(outputs).transpose(0, 1)
     
@@ -326,14 +327,14 @@ class DecoderOnlyTransformer(base.BaseDecoderOnly):
             #     .repeat(batch.target.padded.size(0))
             #     .unsqueeze(1)
             # )
-            # target_mask = torch.cat(
-            #     (starts == self.pad_idx, batch.target.mask), dim=1
+            # sequence_mask = torch.cat(
+            #     (starts == self.pad_idx, batch.sequence.mask), dim=1
             # )
             decoder_output = self.decoder(
                 batch.sequence.padded, batch.sequence.mask, batch.sequence.prefix_lengths
             ).output
             logits = self.classifier(decoder_output)
-            output = logits[:, :-1, :]  # Ignore EOS.
+            output = logits #[:, :-1, :]  # Ignore EOS.
         else:
             # -> B x seq_len x output_size.
             output = self._decode_greedy(
