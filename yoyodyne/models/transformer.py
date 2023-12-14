@@ -266,7 +266,7 @@ class DecoderOnlyTransformer(base.BaseDecoderOnly):
                 sequence = torch.cat((sequence, pred.unsqueeze(1)), dim=1)
                 # Appends to key padding mask.
                 sequence_mask = torch.cat(
-                    (sequence_mask, torch.zeros((batch_size, 1), dtype=torch.float, device=self.device)),
+                    (sequence_mask, torch.zeros((batch_size, 1), dtype=torch.bool, device=self.device)),
                     dim=1
                 )
             # TODO: Here we shouldn't need a causal mask at all.

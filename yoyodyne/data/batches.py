@@ -173,10 +173,7 @@ class DecoderOnlyPaddedTensor(PaddedTensor):
             self.prefix_lengths = [0 for _ in target_tensorlist]
         else:
             self.prefix_lengths = [s.size(0) for s in source_tensorlist]
-        self.register_buffer(
-            "padded",
-            tensors,
-        )
+        self.register_buffer("padded", tensors)
         self.register_buffer("mask", tensors == pad_idx)
 
     @staticmethod
