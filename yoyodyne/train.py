@@ -14,7 +14,7 @@ class Error(Exception):
     pass
 
 
-def _get_logger(experiment: str, model_dir: str, log_wandb: bool) -> List:
+def _get_logger(experiment: str, model_dir: str, log_wandb: bool, run_name: str) -> List:
     """Creates the logger(s).
 
     Args:
@@ -28,7 +28,11 @@ def _get_logger(experiment: str, model_dir: str, log_wandb: bool) -> List:
     trainer_logger = [loggers.CSVLogger(model_dir, name=experiment)]
     if log_wandb:
         trainer_logger.append(
-            loggers.WandbLogger(project=experiment, log_model="all")
+            loggers.WandbLogger(
+                project=experiment,
+                log_model="all", 
+                name=run_name,
+            )
         )
         # Tells PTL to log best validation acc
         wandb.define_metric("val_accuracy", summary="max")
@@ -90,7 +94,7 @@ def get_trainer_from_argparse_args(
         callbacks=_get_callbacks(args.save_top_k, args.patience),
         default_root_dir=args.model_dir,
         enable_checkpointing=True,
-        logger=_get_logger(args.experiment, args.model_dir, args.log_wandb),
+        logger=_get_logger(args.experiment, args.model_dir, args.log_wandb, args.run_name),
     )
 
 
@@ -290,6 +294,10 @@ def add_argparse_args(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         default=defaults.LOG_WANDB,
         help="Use Weights & Biases logging (log-in required). Default: True.",
+    )
+    parser.add_argument(
+        "--run_name",
+        help="Name of wandb run",
     )
     parser.add_argument(
         "--no_log_wandb",

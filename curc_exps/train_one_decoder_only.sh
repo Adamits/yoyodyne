@@ -48,7 +48,7 @@ yoyodyne-train \
     --batch_size "${BATCH_SIZE}" \
     --target_col 2 \
     --features_col 3 \
-    --experiment ${language}-decoder-only \
+    --experiment sig-2017-decoder-only \
     --train "${TRAIN}" \
     --val "${DEV}" \
     --max_epochs 800 \
@@ -68,4 +68,5 @@ yoyodyne-train \
     --check_val_every_n_epoch 16 \
     --model_dir "${RESULTS_PATH}" \
     --seed 42 \
+    --run_name ${language} \
     --log_wandb;
