@@ -230,7 +230,8 @@ class DecoderOnlyTransformer(base.BaseDecoderOnly):
             dropout=self.dropout,
             embedding_size=self.embedding_size,
             source_attention_heads=self.source_attention_heads,
-            max_source_length=self.max_source_length,
+            # Defaults to sum since they are concatenated together
+            max_source_length=self.max_source_length+self.max_target_length,
             layers=self.decoder_layers,
             hidden_size=self.hidden_size,
         )

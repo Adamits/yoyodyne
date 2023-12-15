@@ -191,7 +191,7 @@ class Collator:
 class DecoderOnlyCollator(Collator):
     """Pads data."""
 
-    max_length: int = defaults.MAX_SOURCE_LENGTH
+    max_length: int = defaults.MAX_SOURCE_LENGTH + defaults.MAX_TARGET_LENGTH
 
     def _length_error(self, padded_length: int) -> None:
         """Callback function to raise the error when the padded length of the
