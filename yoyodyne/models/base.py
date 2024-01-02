@@ -707,9 +707,6 @@ class BaseDecoderOnly(BaseEncoderDecoder):
         greedy_predictions = torch.narrow(
             greedy_predictions, 2, 0, target_padded.size(1)
         )
-        with open(self.val_out, "a") as out:
-            for p in self.dataset.decode_target(greedy_predictions.argmax(dim=1)):
-                print(p, file=out)
 
         loss = self.loss_func(greedy_predictions, target_padded)
         return {"val_eval_item": val_eval_item, "val_loss": loss}

@@ -1,13 +1,14 @@
 """Trains a sequence-to-sequence neural network."""
 
 import argparse
+import os
 from typing import List, Optional
 
 import pytorch_lightning as pl
 import wandb
 from pytorch_lightning import callbacks, loggers
 
-from . import data, defaults, models, schedulers, util
+from . import data, defaults, models, predict, schedulers, util
 
 
 class Error(Exception):
@@ -342,7 +343,6 @@ def main() -> None:
     trainer = get_trainer_from_argparse_args(args)
     datamodule = get_datamodule_from_argparse_args(args)
     model = get_model_from_argparse_args(args, datamodule)
-    print(model.decoder.embeddings)
     # Tuning options. Batch autoscaling is unsupported; LR tuning logs the
     # suggested value and then exits.
     if args.auto_scale_batch_size:
@@ -354,6 +354,11 @@ def main() -> None:
         return
     # Otherwise, train and log the best checkpoint.
     best_checkpoint = train(trainer, model, datamodule, args.train_from)
+    model = model.load_from_checkpoint(best_checkpoint)
+    # Sets path for making predictions to the val path.
+    datamodule.predict = args.val
+    output = os.path.join(args.model_dir, args.experiment, "val_preds.txt")
+    predict.predict(trainer, model, datamodule, output)
     util.log_info(f"Best checkpoint: {best_checkpoint}")
 
 
