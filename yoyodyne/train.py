@@ -355,7 +355,8 @@ def main() -> None:
         return
     # Otherwise, train and log the best checkpoint.
     best_checkpoint = train(trainer, model, datamodule, args.train_from)
-    model = model.load_from_checkpoint(best_checkpoint)
+    model_cls = models.get_model_cls_from_argparse_args(args)
+    model = model_cls.load_from_checkpoint(best_checkpoint)
     # Sets path for making predictions to the val path.
     datamodule.predict = args.val
     output = os.path.join(args.model_dir, args.experiment, "val_preds.txt")
