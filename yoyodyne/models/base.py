@@ -560,7 +560,7 @@ class BaseDecoderOnly(BaseEncoderDecoder):
         source_vocab_size,
         target_vocab_size,
         source_encoder_cls,
-        dataset, # For debugging
+        dataset=None, # For debugging
         val_out="validation_preds", # For debugging
         features_encoder_cls=None,
         features_vocab_size=0,
