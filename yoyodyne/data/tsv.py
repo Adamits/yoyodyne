@@ -7,6 +7,7 @@ separators.
 
 import csv
 import dataclasses
+import re
 from typing import Iterator, List, Tuple, Union
 
 from .. import defaults
@@ -46,6 +47,9 @@ class TsvParser:
     source_sep: str = defaults.SOURCE_SEP
     features_sep: str = defaults.FEATURES_SEP
     target_sep: str = defaults.TARGET_SEP
+    hierarch_feats: bool = False
+    # For >= Unimorph 4.0
+    HIERARCH_CASE_PAT: re.Pattern = re.compile(';[A-Z]+?\+?[A-Z]*?\(.+?\)')
 
     def __post_init__(self) -> None:
         # This is automatically called after initialization.
@@ -123,8 +127,26 @@ class TsvParser:
     def source_symbols(self, string: str) -> List[str]:
         return self._get_symbols(string, self.source_sep)
 
+    def _split_hierarch_feats(self, feats):
+        if feats.startswith(("N", "ADJ")):
+            feats = feats.replace("(", self.features_sep).replace(")", self.features_sep)
+            feats = feats.strip(self.features_sep)
+        else:
+            for match in self.HIERARCH_CASE_PAT.finditer(feats):
+                text = match.group()
+                case = text[1:text.index("(")]
+                orig = text[text.index("(") + 1:-1].replace(self.features_sep,",").split(",")
+                distributed = self.features_sep + self.features_sep.join([case + "-" + feat for feat in orig])
+                feats = feats.replace(text, distributed)
+        return feats.split(self.features_sep)
+    
     def features_symbols(self, string: str) -> List[str]:
         # We deliberately obfuscate these to avoid overlap with source.
+        if self.hierarch_feats:
+             return [
+            f"[{symbol}]"
+            for symbol in self._split_hierarch_feats(string)
+        ]
         return [
             f"[{symbol}]"
             for symbol in self._get_symbols(string, self.features_sep)

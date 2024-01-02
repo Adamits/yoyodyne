@@ -58,6 +58,12 @@ def add_argparse_args(parser: argparse.ArgumentParser) -> None:
         "is its own symbol. Default: %(default)r.",
     )
     parser.add_argument(
+        "--hierarchical_features",
+        action=argparse.BooleanOptionalAction,
+        help="Reads features according to the hierarchical schema of "
+        "Unimorph 4.0."
+    )
+    parser.add_argument(
         "--batch_size",
         type=int,
         default=defaults.BATCH_SIZE,

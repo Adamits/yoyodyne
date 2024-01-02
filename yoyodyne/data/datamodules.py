@@ -34,6 +34,7 @@ class DataModule(pl.LightningDataModule):
         source_sep: str = defaults.SOURCE_SEP,
         features_sep: str = defaults.FEATURES_SEP,
         target_sep: str = defaults.TARGET_SEP,
+        hierarch_feats: bool=False,
         # Collator options.
         is_decoder_only: bool = False,
         batch_size=defaults.BATCH_SIZE,
@@ -51,6 +52,7 @@ class DataModule(pl.LightningDataModule):
             source_sep=source_sep,
             features_sep=features_sep,
             target_sep=target_sep,
+            hierarch_feats=hierarch_feats,
         )
         self.train = train
         self.val = val
