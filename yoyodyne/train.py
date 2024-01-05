@@ -187,11 +187,14 @@ def get_model_from_argparse_args(
     features_vocab_size = (
         datamodule.index.features_vocab_size if datamodule.has_features else 0
     )
-    source_vocab_size = (
-        datamodule.index.source_vocab_size + features_vocab_size
-        if not separate_features
-        else datamodule.index.source_vocab_size
-    )
+    # FIXME: For working with the hack in idexes.py so that we can
+    #       decode batches with features at runtime.
+    # source_vocab_size = (
+    #     datamodule.index.source_vocab_size + features_vocab_size
+    #     if not separate_features
+    #     else datamodule.index.source_vocab_size
+    # )
+    source_vocab_size = datamodule.index.source_vocab_size
     # Please pass all arguments by keyword and keep in lexicographic order.
     return model_cls(
         arch=args.arch,

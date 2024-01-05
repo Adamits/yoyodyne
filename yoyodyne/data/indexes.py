@@ -74,7 +74,8 @@ class Index:
             target_vocabulary (List[str], optional).
         """
         super().__init__()
-        self.source_map = SymbolMap(source_vocabulary)
+        # FIXME: Hack so decoding batches at runtime with features works
+        self.source_map = SymbolMap(source_vocabulary + features_vocabulary)
         self.features_map = (
             SymbolMap(features_vocabulary) if features_vocabulary else None
         )

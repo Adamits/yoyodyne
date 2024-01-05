@@ -280,7 +280,6 @@ class BaseEncoderDecoder(pl.LightningModule):
         Returns:
             Dict[str, float]: validation metrics.
         """
-
         # FIXME: Make sure we are evaluating on the right preds...
         # Greedy decoding.
         # -> B x seq_len x target_vocab_size.
@@ -635,6 +634,11 @@ class BaseDecoderOnly(BaseEncoderDecoder):
         Returns:
             torch.Tensor: loss.
         """
+        # if batch_idx == 0:
+        #     print("sequence")
+        #     print(batch.sequence.padded[0, :])
+        # # if batch_idx > -1:
+        #     print("TRAIN TRUNCATED SEQUENCE BATCH", list(self.dataset.decode_source(batch.sequence.padded))[:3])
         # -> B x seq_len x target_vocab_size.
         predictions = self(batch)
         # Target is the same as sequence but the prefix is pads.
@@ -683,6 +687,13 @@ class BaseDecoderOnly(BaseEncoderDecoder):
         Returns:
             Dict[str, float]: validation metrics.
         """
+        # if batch_idx == 0:
+        #     print("sequence")
+        #     print(batch.sequence.padded[0])
+        #     print("EVAL TRUNCATED sequence BATCH", list(self.dataset.decode_source(batch.sequence.padded))[:10])
+        #     print("EVAL TRUNCATED TARGET BATCH", list(self.dataset.decode_target(batch.target.padded)))#[:10])
+        #     if batch.features:
+        #         print("EVAL TRUNCATED FEATURES BATCH", list(self.dataset.decode_features(batch.features.padded))[:10])
         # Greedy decoding.
         # -> B x seq_len x target_vocab_size.
         target_padded = batch.target.padded

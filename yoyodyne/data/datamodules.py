@@ -69,7 +69,7 @@ class DataModule(pl.LightningDataModule):
                 has_features=self.has_features,
                 has_target=self.has_target,
                 separate_features=separate_features,
-                features_offset=self.index.source_vocab_size
+                features_offset=self.index.source_vocab_size - self.index.features_vocab_size # FIXME: Support hack for decoding batches w/ features
                 if self.has_features
                 else 0,
                 max_length=max_source_length + max_target_length,

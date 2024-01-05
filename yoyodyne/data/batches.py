@@ -165,10 +165,7 @@ class DecoderOnlyPaddedTensor(PaddedTensor):
                     for t in source_tensorlist
                 ],
             )
-        
-        # FIXME: We need to account for the left-padding we now have.
-        #       Each batch should have a prefix length of num_pads + prefix_length.
-        # pad_lens = torch.sum(tensors == pad_idx, dim=1)
+
         if self.is_target:
             self.prefix_lengths = [0 for _ in target_tensorlist]
         else:

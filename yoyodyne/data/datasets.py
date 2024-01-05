@@ -144,7 +144,7 @@ class Dataset(data.Dataset):
             yield [
                 symbol_map.symbol(c)
                 for c in idx
-                if c not in self.index.special_idx
+                # if c not in self.index.special_idx
             ]
 
     def decode_source(
