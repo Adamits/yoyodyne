@@ -144,9 +144,9 @@ class TsvParser:
         # We deliberately obfuscate these to avoid overlap with source.
         if self.hierarch_feats:
              return [
-            f"[{symbol}]"
-            for symbol in self._split_hierarch_feats(string)
-        ]
+                f"[{symbol}]"
+                for symbol in self._split_hierarch_feats(string)
+            ]
         return [
             f"[{symbol}]"
             for symbol in self._get_symbols(string, self.features_sep)
