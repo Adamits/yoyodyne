@@ -33,12 +33,20 @@ def get_datamodule_from_argparse_args(
     Returns:
         data.DataModule.
     """
+    index = data.Index.read(args.model_dir, args.experiment)
     separate_features = args.features_col != 0 and args.arch in [
         "pointer_generator_lstm",
+        "pointer_generator_transformer",
         "transducer",
     ]
-    index = data.Index.read(args.model_dir, args.experiment)
-    return data.DataModule(
+    is_decoder_only = args.arch in [
+        "decoder_only_transformer"
+    ]
+    data_module_cls = data.DataModule
+    # if is_decoder_only:
+    #     data_module_cls = data.DecoderOnlyDataModule
+    datamodule = data_module_cls(
+
         predict=args.predict,
         batch_size=args.batch_size,
         source_col=args.source_col,
@@ -52,7 +60,10 @@ def get_datamodule_from_argparse_args(
         max_source_length=args.max_source_length,
         max_target_length=args.max_target_length,
         index=index,
+        is_decoder_only=is_decoder_only,
     )
+    datamodule.log_vocabularies()
+    return datamodule
 
 
 def get_model_from_argparse_args(
