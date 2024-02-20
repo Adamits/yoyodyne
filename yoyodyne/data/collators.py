@@ -326,7 +326,7 @@ class DecoderOnlyCollator(Collator):
         # Target during training; matches sequence but pads the prefix so those
         # predictions are ignored in loss calculation
         padded_masked_sequence = self.pad_masked_sequence(itemlist) if self.has_target else None
-        padded_target = self.pad_target(itemlist)
+        padded_target = self.pad_target(itemlist) if self.has_target else None
         padded_source = self.pad_source(itemlist)
         return batches.DecoderOnlyPaddedBatch(
             padded_sequence,
