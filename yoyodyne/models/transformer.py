@@ -284,6 +284,8 @@ class DecoderOnlyTransformer(base.BaseDecoderOnly):
                 prefix_lengths=prefix_lengths,
             ).output
             logits = self.classifier(decoder_output)
+
+            _, test_preds = torch.max(logits, dim=2)
             last_output = logits[:, -1, :]  # Ignores EOS.
             # In the first iteration, we get all outputs, as we want to include
             # the prefix.
@@ -340,6 +342,8 @@ class DecoderOnlyTransformer(base.BaseDecoderOnly):
                 batch.sequence.padded, batch.sequence.mask, batch.sequence.prefix_lengths
             ).output
             logits = self.classifier(decoder_output)
+
+            _, train_preds = torch.max(logits, dim=2)
             output = logits #[:, :-1, :]  # Ignore EOS.
         else:
             # -> B x seq_len x output_size.
@@ -347,7 +351,7 @@ class DecoderOnlyTransformer(base.BaseDecoderOnly):
                 batch.source.padded,
                 batch.source.mask,
                 batch.source.prefix_lengths,
-                batch.sequence.padded if batch.sequence else None
+                batch.target.padded if batch.target else None
             )
         return output
 

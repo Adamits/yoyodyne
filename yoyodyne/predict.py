@@ -46,7 +46,6 @@ def get_datamodule_from_argparse_args(
     # if is_decoder_only:
     #     data_module_cls = data.DecoderOnlyDataModule
     datamodule = data_module_cls(
-
         predict=args.predict,
         batch_size=args.batch_size,
         source_col=args.source_col,

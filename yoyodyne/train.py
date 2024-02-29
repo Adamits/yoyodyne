@@ -187,14 +187,11 @@ def get_model_from_argparse_args(
     features_vocab_size = (
         datamodule.index.features_vocab_size if datamodule.has_features else 0
     )
-    # FIXME: For working with the hack in idexes.py so that we can
-    #       decode batches with features at runtime.
-    # source_vocab_size = (
-    #     datamodule.index.source_vocab_size + features_vocab_size
-    #     if not separate_features
-    #     else datamodule.index.source_vocab_size
-    # )
-    source_vocab_size = datamodule.index.source_vocab_size
+    source_vocab_size = (
+        datamodule.index.source_vocab_size + features_vocab_size
+        if not separate_features
+        else datamodule.index.source_vocab_size
+    )
     # Please pass all arguments by keyword and keep in lexicographic order.
     return model_cls(
         arch=args.arch,
@@ -362,7 +359,7 @@ def main() -> None:
     model = model_cls.load_from_checkpoint(best_checkpoint)
     # Sets path for making predictions to the val path.
     datamodule.predict = args.val
-    output = os.path.join(args.model_dir, args.experiment, "val_preds.txt")
+    output = os.path.join(best_checkpoint.split("/checkpoints")[0], "val_preds.txt")
     predict.predict(trainer, model, datamodule, output)
     util.log_info(f"Best checkpoint: {best_checkpoint}")
 
