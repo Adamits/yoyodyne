@@ -237,6 +237,7 @@ class BaseEncoderDecoder(pl.LightningModule):
         self,
         batch: data.PaddedBatch,
         batch_idx: int,
+        pack_sequences: bool=True,
     ) -> torch.Tensor:
         """Runs one step of training.
 

@@ -323,6 +323,20 @@ def main() -> None:
     trainer = get_trainer_from_argparse_args(args)
     datamodule = get_datamodule_from_argparse_args(args)
     model = get_model_from_argparse_args(args, datamodule)
+    
+    from torchtnt.utils.flops import FlopTensorDispatchMode
+    import copy
+    x = next(iter(datamodule.train_dataloader()))
+    with FlopTensorDispatchMode(model) as ftdm:
+        res = model.training_step(x, 0, pack_sequences=False)
+        flops = copy.deepcopy(ftdm.flop_counts)
+        # reset count before counting backward flops
+        ftdm.reset()
+        # res.backward()
+        # flops_backward = copy.deepcopy(ftdm.flop_counts)
+        # print(flops_forward, flops_backward)
+        print(flops)
+
     # Logs number of model parameters.
     if args.log_wandb:
         wandb.config["n_model_params"] = sum(

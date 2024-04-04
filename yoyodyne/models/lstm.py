@@ -277,6 +277,7 @@ class LSTMEncoderDecoder(base.BaseEncoderDecoder):
     def forward(
         self,
         batch: data.PaddedBatch,
+        pack_sequences: bool=True,
     ) -> torch.Tensor:
         """Runs the encoder-decoder model.
 
@@ -287,7 +288,7 @@ class LSTMEncoderDecoder(base.BaseEncoderDecoder):
             predictions (torch.Tensor): tensor of predictions of shape
                 (seq_len, batch_size, target_vocab_size).
         """
-        encoder_out = self.source_encoder(batch.source).output
+        encoder_out = self.source_encoder(batch.source, pack_sequences=pack_sequences).output
         if self.beam_width is not None and self.beam_width > 1:
             predictions = self.beam_decode(
                 encoder_out,

@@ -58,7 +58,7 @@ class LSTMModule(base.BaseModule):
 
 class LSTMEncoder(LSTMModule):
     def forward(
-        self, source: data.PaddedTensor
+        self, source: data.PaddedTensor, pack_sequences: bool=True
     ) -> Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         """Encodes the input.
 
@@ -72,17 +72,21 @@ class LSTMEncoder(LSTMModule):
         """
         embedded = self.embed(source.padded)
         # Packs embedded source symbols into a PackedSequence.
-        packed = nn.utils.rnn.pack_padded_sequence(
-            embedded, source.lengths(), batch_first=True, enforce_sorted=False
-        )
-        # -> B x seq_len x encoder_dim, (h0, c0).
-        packed_outs, (H, C) = self.module(packed)
-        encoded, _ = nn.utils.rnn.pad_packed_sequence(
-            packed_outs,
-            batch_first=True,
-            padding_value=self.pad_idx,
-            total_length=None,
-        )
+        if pack_sequences:
+            packed = nn.utils.rnn.pack_padded_sequence(
+                embedded, source.lengths(), batch_first=True, enforce_sorted=False
+            )
+            # -> B x seq_len x encoder_dim, (h0, c0).
+            packed_outs, (H, C) = self.module(packed)
+            encoded, _ = nn.utils.rnn.pad_packed_sequence(
+                packed_outs,
+                batch_first=True,
+                padding_value=self.pad_idx,
+                total_length=None,
+            )
+        else:
+            encoded, (H, C) = self.module(packed)
+
         return base.ModuleOutput(encoded, hiddens=(H, C))
 
     def get_module(self) -> nn.LSTM:
