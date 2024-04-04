@@ -6,6 +6,7 @@ from typing import List, Optional
 import pytorch_lightning as pl
 import wandb
 from pytorch_lightning import callbacks, loggers
+import torch
 
 from . import data, defaults, models, schedulers, util
 
@@ -323,12 +324,13 @@ def main() -> None:
     trainer = get_trainer_from_argparse_args(args)
     datamodule = get_datamodule_from_argparse_args(args)
     model = get_model_from_argparse_args(args, datamodule)
+    # model = torch.compile(model)
     
     from torchtnt.utils.flops import FlopTensorDispatchMode
     import copy
     x = next(iter(datamodule.train_dataloader()))
-    # TODO: Reaad about why people suggest using a "meta" device
-    #       when computing FLOPs.
+    # # TODO: Reaad about why people suggest using a "meta" device
+    # #       when computing FLOPs.
     with FlopTensorDispatchMode(model) as ftdm:
         # TODO: This calls forward and backwward
         # Instead, we can compute just forward, then 
@@ -346,6 +348,7 @@ def main() -> None:
         print("classifier", flops["classifier"])
         # Ensure no gradients when we actually start training.
         model.zero_grad()
+    # from torch.utils.flop_counter import FlopCounterMode
     # Logs number of model parameters.
     if args.log_wandb:
         wandb.config["n_model_params"] = sum(
@@ -362,6 +365,11 @@ def main() -> None:
         util.log_info(f"Best initial LR: {result.suggestion():.8f}")
         return
     # Otherwise, train and log the best checkpoint.
+    # flop_counter = FlopCounterMode(model)
+    # with flop_counter:
+    #     best_checkpoint = train(trainer, model, datamodule, args.train_from)
+    # flop_counter.get_flop_counts()
+    # flop_counter.get_total_flops()
     best_checkpoint = train(trainer, model, datamodule, args.train_from)
     util.log_info(f"Best checkpoint: {best_checkpoint}")
 
