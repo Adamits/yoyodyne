@@ -334,6 +334,7 @@ def main() -> None:
         raise Error("Batch auto-scaling is not supported")
         return
     if args.auto_lr_find:
+        # FIXME: for lightning >= 2.0 we need to use a separate Tuner object.
         result = trainer.tuner.lr_find(model, datamodule=datamodule)
         util.log_info(f"Best initial LR: {result.suggestion():.8f}")
         return
