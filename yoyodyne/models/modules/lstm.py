@@ -85,7 +85,7 @@ class LSTMEncoder(LSTMModule):
                 total_length=None,
             )
         else:
-            encoded, (H, C) = self.module(packed)
+            encoded, (H, C) = self.module(embedded)
 
         return base.ModuleOutput(encoded, hiddens=(H, C))
 

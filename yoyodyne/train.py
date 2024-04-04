@@ -327,16 +327,25 @@ def main() -> None:
     from torchtnt.utils.flops import FlopTensorDispatchMode
     import copy
     x = next(iter(datamodule.train_dataloader()))
+    # TODO: Reaad about why people suggest using a "meta" device
+    #       when computing FLOPs.
     with FlopTensorDispatchMode(model) as ftdm:
+        # TODO: This calls forward and backwward
+        # Instead, we can compute just forward, then 
+        # simulate computing a loss and calling backward
+        # then separately compute backwards FLOPs?
         res = model.training_step(x, 0, pack_sequences=False)
         flops = copy.deepcopy(ftdm.flop_counts)
-        # reset count before counting backward flops
         ftdm.reset()
-        # res.backward()
-        # flops_backward = copy.deepcopy(ftdm.flop_counts)
-        # print(flops_forward, flops_backward)
-        print(flops)
-
+        print(flops.keys())
+        print(flops[""])
+        print("decoder", flops["decoder"])
+        print("decoder.attention", flops["decoder.attention"])
+        print("decoder.attention.M", flops["decoder.attention.M"])
+        print("decoder.attention.V", flops["decoder.attention.V"])
+        print("classifier", flops["classifier"])
+        # Ensure no gradients when we actually start training.
+        model.zero_grad()
     # Logs number of model parameters.
     if args.log_wandb:
         wandb.config["n_model_params"] = sum(

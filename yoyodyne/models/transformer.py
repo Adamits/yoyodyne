@@ -117,6 +117,8 @@ class TransformerEncoderDecoder(base.BaseEncoderDecoder):
     def forward(
         self,
         batch: data.PaddedBatch,
+        *args,
+        **kwargs,
     ) -> torch.Tensor:
         """Runs the encoder-decoder.
 

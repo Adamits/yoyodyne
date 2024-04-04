@@ -70,6 +70,8 @@ class TransducerEncoderDecoder(lstm.LSTMEncoderDecoder):
     def forward(
         self,
         batch: data.PaddedBatch,
+        *args,
+        **kwargs,
     ) -> Tuple[List[List[int]], torch.Tensor]:
         """Runs the encoder-decoder model.
 

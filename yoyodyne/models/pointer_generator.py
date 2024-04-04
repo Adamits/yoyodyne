@@ -381,6 +381,8 @@ class PointerGeneratorLSTMEncoderDecoder(
     def forward(
         self,
         batch: data.PaddedBatch,
+        *args,
+        **kwargs,
     ) -> torch.Tensor:
         """Runs the encoder-decoder.
 
@@ -663,6 +665,8 @@ class PointerGeneratorTransformerEncoderDecoder(
     def forward(
         self,
         batch: data.PaddedBatch,
+        *args,
+        **kwargs,
     ) -> torch.Tensor:
         """Runs the encoder-decoder.
 
