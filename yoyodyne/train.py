@@ -2,11 +2,12 @@
 
 import argparse
 from typing import List, Optional
+import copy
 
 import pytorch_lightning as pl
 import wandb
 from pytorch_lightning import callbacks, loggers
-import torch
+from torchtnt.utils.flops import FlopTensorDispatchMode
 
 from . import data, defaults, models, schedulers, util
 
@@ -324,14 +325,15 @@ def main() -> None:
     trainer = get_trainer_from_argparse_args(args)
     datamodule = get_datamodule_from_argparse_args(args)
     model = get_model_from_argparse_args(args, datamodule)
+    # FIXME: Seems to not work on my mac for now.
     # model = torch.compile(model)
     
-    from torchtnt.utils.flops import FlopTensorDispatchMode
-    import copy
-    x = next(iter(datamodule.train_dataloader()))
-    # # TODO: Reaad about why people suggest using a "meta" device
-    # #       when computing FLOPs.
+    # TODO: Read about why people suggest using a "meta" device
+    #       when computing FLOPs.
     with FlopTensorDispatchMode(model) as ftdm:
+        # NOTE: Doing this here will change the order 
+        #       of the dataset in the first epoch for actual training.
+        x = next(iter(datamodule.train_dataloader()))
         # TODO: This calls forward and backwward
         # Instead, we can compute just forward, then 
         # simulate computing a loss and calling backward
@@ -339,21 +341,25 @@ def main() -> None:
         res = model.training_step(x, 0, pack_sequences=False)
         flops = copy.deepcopy(ftdm.flop_counts)
         ftdm.reset()
-        print(flops.keys())
-        print(flops[""])
-        print("decoder", flops["decoder"])
-        print("decoder.attention", flops["decoder.attention"])
-        print("decoder.attention.M", flops["decoder.attention.M"])
-        print("decoder.attention.V", flops["decoder.attention.V"])
-        print("classifier", flops["classifier"])
+        # NOTE: I think this has sums of the flops in all subcomponents
+        # TODO: Not sure if this works right nor if I interpret it rught
+        #       did not see much by way ofducmentation on torchtnt
+        flops_dict = flops[""]
+        all_flops = sum(flops_dict.values())
+        if all_flops > 1000000:
+            all_flops = f"{all_flops // 1000000}M"
+        elif all_flops > 1000000000:
+            all_flops = f"{all_flops // 1000000000}B"
+        util.log_info(f"FLOPs from one train step: {all_flops}")
         # Ensure no gradients when we actually start training.
         model.zero_grad()
-    # from torch.utils.flop_counter import FlopCounterMode
     # Logs number of model parameters.
     if args.log_wandb:
         wandb.config["n_model_params"] = sum(
             p.numel() for p in model.parameters()
         )
+        wandb.config["FLOPs"] = flops_dict
+        wandb.config["total_FLOPs"] = sum(flops_dict.values())
     # Tuning options. Batch autoscaling is unsupported; LR tuning logs the
     # suggested value and then exits.
     if args.auto_scale_batch_size:
