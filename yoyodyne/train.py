@@ -331,6 +331,8 @@ def main() -> None:
     # TODO: Read about why people suggest using a "meta" device
     #       when computing FLOPs.
     with FlopTensorDispatchMode(model) as ftdm:
+        device = args.accelerator
+        model = model.to(device)
         # NOTE: Doing this here will change the order 
         #       of the dataset in the first epoch for actual training.
         x = next(iter(datamodule.train_dataloader()))
