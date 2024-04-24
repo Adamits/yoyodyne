@@ -251,7 +251,7 @@ class BaseEncoderDecoder(pl.LightningModule):
             torch.Tensor: loss.
         """
         # -> B x seq_len x target_vocab_size.
-        predictions = self(batch, pack_sequences)
+        predictions = self(batch, pack_sequences=pack_sequences)
         target_padded = batch.target.padded
         # -> B x target_vocab_size x seq_len. For loss.
         predictions = predictions.transpose(1, 2)

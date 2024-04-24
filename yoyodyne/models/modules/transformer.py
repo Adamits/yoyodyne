@@ -185,7 +185,7 @@ class TransformerModule(base.BaseModule):
 
 
 class TransformerEncoder(TransformerModule):
-    def forward(self, source: data.PaddedTensor) -> torch.Tensor:
+    def forward(self, source: data.PaddedTensor, *args, **kwargs) -> torch.Tensor:
         """Encodes the source with the TransformerEncoder.
 
         Args:

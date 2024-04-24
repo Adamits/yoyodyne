@@ -118,6 +118,7 @@ class TransformerEncoderDecoder(base.BaseEncoderDecoder):
         self,
         batch: data.PaddedBatch,
         *args,
+        pack_sequences: bool=True,
         **kwargs,
     ) -> torch.Tensor:
         """Runs the encoder-decoder.
@@ -144,14 +145,14 @@ class TransformerEncoderDecoder(base.BaseEncoderDecoder):
             target_mask = torch.cat(
                 (starts == self.pad_idx, batch.target.mask), dim=1
             )
-            encoder_output = self.source_encoder(batch.source).output
+            encoder_output = self.source_encoder(batch.source, pack_sequences=pack_sequences).output
             decoder_output = self.decoder(
                 encoder_output, batch.source.mask, target_padded, target_mask
             ).output
             logits = self.classifier(decoder_output)
             output = logits[:, :-1, :]  # Ignore EOS.
         else:
-            encoder_output = self.source_encoder(batch.source).output
+            encoder_output = self.source_encoder(batch.source, pack_sequences=pack_sequences).output
             # -> B x seq_len x output_size.
             output = self._decode_greedy(
                 encoder_output,
