@@ -36,17 +36,23 @@ class TransformerEncoderDecoder(base.BaseEncoderDecoder):
         super().__init__(
             *args, source_attention_heads=source_attention_heads, **kwargs
         )
+        if self.enc_dec_mismatch:
+            self.encoder_decoder_projection = nn.Linear(
+                self.source_encoder.output_size, self.embedding_size
+            )
         self.classifier = nn.Linear(
             self.embedding_size, self.target_vocab_size
         )
 
     def get_decoder(self):
+        # TODO: Decoder input size and embedding size need to be the same, I think.
+        # To fix this we added the projection layer, and thus need to update the inline FIXME below.
         return modules.transformer.TransformerDecoder(
             pad_idx=self.pad_idx,
             start_idx=self.start_idx,
             end_idx=self.end_idx,
             num_embeddings=self.target_vocab_size,
-            decoder_input_size=self.source_encoder.output_size,
+            decoder_input_size=self.source_encoder.output_size, # FIXME: I think needs to be self.embedding size.
             dropout=self.dropout,
             embedding_size=self.embedding_size,
             source_attention_heads=self.source_attention_heads,
@@ -146,6 +152,8 @@ class TransformerEncoderDecoder(base.BaseEncoderDecoder):
                 (starts == self.pad_idx, batch.target.mask), dim=1
             )
             encoder_output = self.source_encoder(batch.source, pack_sequences=pack_sequences).output
+            if self.enc_dec_mismatch:
+                encoder_output = self.encoder_decoder_projection(encoder_output)
             decoder_output = self.decoder(
                 encoder_output, batch.source.mask, target_padded, target_mask
             ).output
@@ -153,6 +161,8 @@ class TransformerEncoderDecoder(base.BaseEncoderDecoder):
             output = logits[:, :-1, :]  # Ignore EOS.
         else:
             encoder_output = self.source_encoder(batch.source, pack_sequences=pack_sequences).output
+            if self.enc_dec_mismatch:
+                encoder_output = self.encoder_decoder_projection(encoder_output)
             # -> B x seq_len x output_size.
             output = self._decode_greedy(
                 encoder_output,
@@ -161,6 +171,10 @@ class TransformerEncoderDecoder(base.BaseEncoderDecoder):
             )
         return output
 
+    @property
+    def enc_dec_mismatch(self) -> bool:
+        return self.source_encoder.output_size != self.embedding_size
+    
     @property
     def name(self) -> str:
         return "transformer"
