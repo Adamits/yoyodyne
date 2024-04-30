@@ -9,7 +9,7 @@ import wandb
 from pytorch_lightning import callbacks, loggers
 from torchtnt.utils.flops import FlopTensorDispatchMode
 
-from . import data, defaults, models, schedulers, util
+from . import data, defaults, evaluators, models, schedulers, util
 
 
 class Error(Exception):
@@ -191,6 +191,7 @@ def get_model_from_argparse_args(
         embedding_size=args.embedding_size,
         encoder_layers=args.encoder_layers,
         end_idx=datamodule.index.end_idx,
+        eval_metrics=args.eval_metrics,
         expert=expert,
         features_encoder_cls=features_encoder_cls,
         features_vocab_size=features_vocab_size,
@@ -294,6 +295,8 @@ def add_argparse_args(parser: argparse.ArgumentParser) -> None:
     models.modules.add_argparse_args(parser)
     # Scheduler-specific arguments.
     schedulers.add_argparse_args(parser)
+    # Evaluation-specific arguments.
+    evaluators.add_argparse_args(parser)
     # Architecture-specific arguments.
     models.BaseEncoderDecoder.add_argparse_args(parser)
     models.LSTMEncoderDecoder.add_argparse_args(parser)
