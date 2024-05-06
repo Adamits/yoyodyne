@@ -4,6 +4,7 @@ Anything which has a tensor member should inherit from nn.Module, run the
 superclass constructor, and register the tensor as a buffer. This enables the
 Trainer to move them to the appropriate device."""
 
+from collections import defaultdict
 import dataclasses
 
 from typing import Iterator, List, Optional
@@ -15,6 +16,10 @@ from torch.utils import data
 from .. import special
 
 from . import indexes, tsv
+
+
+class Error(Exception):
+    pass
 
 
 class Item(nn.Module):
@@ -229,3 +234,86 @@ class Dataset(data.Dataset):
         else:
             source = self.samples[idx]
             return Item(source=self.encode_source(source))
+
+
+@dataclasses.dataclass
+class TopKDataset(Dataset):
+    def __post_init__(self) -> None:
+        """Updates samples to store a Dict hashing each input to a List of
+        targets.
+
+        This is automatically called after initialization. `has_target`
+        must be True for this to be a valid dataset.
+
+        Raises:
+            Error.
+        """
+        if not self.has_target:
+            raise Error(
+                f"{self.__class__.__name__} is only valid when `has_target` is True"
+                " because it assumes >1 target per input."
+            )
+
+        _samples = defaultdict(list)
+        self.inputs = []
+        for s in self.samples:
+            if self.has_features:
+                source, features, target = s
+                _samples[(tuple(source), tuple(features))].append(target)
+                self.inputs.append((source, features))
+            else:
+                source, target = s
+                _samples[tuple(source)].append(target)
+                self.inputs.append(source)
+        self.samples = _samples
+
+    def __getitem__(self, idx: int) -> Item:
+        """Retrieves item by index.
+
+        Args:
+            idx (int).
+
+        Returns:
+            Item.
+        """
+        if self.has_features:
+            source, features = self.inputs[idx]
+            targets = self.samples[(tuple(source), tuple(features))]
+            # TODO: Could do in one loop for faster runtime.
+            targets = [self.encode_target(t) for t in targets]
+            pad_max = max([len(t) for t in targets])
+            targets = torch.stack([
+                nn.functional.pad(
+                    t,
+                    (0, pad_max-len(t)),
+                    "constant",
+                    self.index.pad_idx,
+                )
+                for t in targets
+            ])
+            return Item(
+                source=self.encode_source(source),
+                features=self.encode_features(features),
+                target=targets,
+            )
+        else:
+            source = self.inputs[idx]
+            targets = [self.encode_target(t) for t in self.samples[tuple(source)]]
+            
+            pad_max = max([len(t) for t in targets])
+            targets = torch.stack([
+                nn.functional.pad(
+                    t,
+                    (0, pad_max-len(t)),
+                    "constant",
+                    self.index.pad_idx,
+                )
+                for t in targets
+            ])
+            # -> num_targets *can be variable I think?) x seq_len
+            # print("dataset target")
+            # print(targets.size())
+            return Item(
+                source=self.encode_source(source),
+                target=targets,
+            )

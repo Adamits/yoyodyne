@@ -18,6 +18,7 @@ class PaddedTensor(nn.Module):
 
     padded: torch.Tensor
     mask: torch.Tensor
+    k: int=None
 
     def __init__(
         self,
@@ -42,20 +43,54 @@ class PaddedTensor(nn.Module):
 
         """
         super().__init__()
-        if pad_len is None:
-            pad_len = max(len(tensor) for tensor in tensorlist)
+        # FIXME: For the top-k val items we need to get the max len on the correct dimension.
+        k = tensorlist[0].size(0)
+        # If there is a 2nd dim, then we need to track `k`
+        # As this needs to be flattened and unflattened later
+        if len(tensorlist[0].size()) > 1:
+            padded, pad_len = self._make_topk_padded(
+                tensorlist,
+                pad_idx,
+                k,
+                pad_len,
+            )
+        else:
+            if pad_len is None:
+                pad_len = max(len(tensor) for tensor in tensorlist)
+            padded = torch.stack(
+                [
+                    self.pad_tensor(tensor, pad_idx, pad_len)
+                    for tensor in tensorlist
+                ]
+            )
         if length_msg_callback is not None:
             length_msg_callback(pad_len)
         self.register_buffer(
             "padded",
-            torch.stack(
-                [
-                    self.pad_tensor(tensor, pad_idx, pad_len)
-                    for tensor in tensorlist
-                ],
-            ),
+            padded,
         )
         self.register_buffer("mask", self.padded == pad_idx)
+
+    def _make_topk_padded(
+        self,
+        tensorlist: List[torch.Tensor],
+        pad_idx: int,
+        k: int,
+        pad_len: Optional[int] = None
+    ):
+        dim_one_pad_len = max(tensor.size(0) for tensor in tensorlist)
+        # We set `k` on the PaddedTensor to be used for reshaping later.
+        self.k = dim_one_pad_len
+        if pad_len is None:
+            pad_len = max(tensor.size(1) for tensor in tensorlist)
+        padded = torch.stack(
+            [
+                self.pad_twod_tensor(tensor, pad_idx, dim_one_pad_len, pad_len)
+                for tensor in tensorlist
+            ],
+        )
+        padded = padded.reshape(padded.size(0), padded.size(1) * padded.size(2))
+        return padded, pad_len
 
     @staticmethod
     def pad_tensor(
@@ -74,6 +109,24 @@ class PaddedTensor(nn.Module):
         padding = pad_max - len(tensor)
         return nn.functional.pad(tensor, (0, padding), "constant", pad_idx)
 
+    @staticmethod
+    def pad_twod_tensor(
+        tensor: torch.Tensor, pad_idx: int, dim_one_pad_max: int, dim_two_pad_max: int
+    ) -> torch.Tensor:
+        """Pads a tensor.
+
+        Args:
+            tensor (torch.Tensor).
+            pad_idx (int): padding index.
+            pad_max (int): desired tensor length.
+
+        Returns:
+            torch.Tensor.
+        """
+        dim_one_padding = dim_one_pad_max - tensor.size(0)
+        dim_two_padding = dim_two_pad_max - tensor.size(1)
+        return nn.functional.pad(tensor, (0, dim_two_padding, 0, dim_one_padding), "constant", pad_idx)
+    
     def __len__(self) -> int:
         return len(self.padded)
 

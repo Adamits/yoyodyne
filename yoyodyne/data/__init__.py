@@ -58,6 +58,11 @@ def add_argparse_args(parser: argparse.ArgumentParser) -> None:
         "is its own symbol. Default: %(default)r.",
     )
     parser.add_argument(
+        "--is_topk_validation",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
         "--batch_size",
         type=int,
         default=defaults.BATCH_SIZE,

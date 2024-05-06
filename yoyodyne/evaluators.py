@@ -4,7 +4,7 @@ from __future__ import annotations
 import abc
 import argparse
 import dataclasses
-from typing import List
+from typing import List, Optional
 
 import numpy
 import torch
@@ -52,6 +52,7 @@ class Evaluator(abc.ABC):
         golds: torch.Tensor,
         end_idx: int,
         pad_idx: int,
+        k_golds: Optional[int]=None
     ) -> EvalItem:
         """Computes the evaluation metric.
 
@@ -76,7 +77,7 @@ class Evaluator(abc.ABC):
         _, predictions = torch.max(predictions, dim=2)
         # Finalizes the predictions.
         predictions = self.finalize_predictions(predictions, end_idx, pad_idx)
-        golds = self.finalize_golds(golds, end_idx, pad_idx)
+        golds = self.finalize_golds(golds, end_idx, pad_idx, k=k_golds)
         return self.get_eval_item(predictions, golds, pad_idx)
 
     def get_eval_item(
@@ -100,6 +101,7 @@ class Evaluator(abc.ABC):
         predictions: torch.Tensor,
         end_idx: int,
         pad_idx: int,
+        k: int,
     ) -> torch.Tensor:
         raise NotImplementedError
 
@@ -272,6 +274,8 @@ class SEREvaluator(Evaluator):
         golds: torch.Tensor,
         end_idx: int,
         pad_idx: int,
+        *args,
+        **kwargs,
     ):
         return self._finalize_tensor(golds, end_idx, pad_idx)
 
@@ -302,25 +306,34 @@ class AccuracyInTop1Evaluator(AccuracyEvaluator):
         Returns:
             EvalItem.
         """
-        if predictions.size(1) > golds.size(1):
-            predictions = predictions[:, : golds.size(1)]
-        elif predictions.size(1) < golds.size(1):
-            num_pads = (0, golds.size(1) - predictions.size(1))
+        if predictions.size(1) > golds.size(2):
+            predictions = predictions[:, : golds.size(2)]
+        elif predictions.size(1) < golds.size(2):
+            num_pads = (0, golds.size(2) - predictions.size(1))
             predictions = functional.pad(
                 predictions, num_pads, "constant", pad_idx
             )
         # Compares exact match of each prediction to all k possible golds
         # by repeating the prediction k times.
         matches = (
-            predictions.to(golds.device).repeat(1, golds.size(1), 1) == golds
+            predictions.to(golds.device).unsqueeze(1).repeat(1, golds.size(1), 1) == golds
         ).all(dim=2)
         # Checks if each prediction in the batch matches any of the k golds.
         top_1_accs = matches.any(dim=1).tolist()
         return EvalItem(top_1_accs)
     
+    def finalize_golds(
+        self,
+        golds: torch.Tensor,
+        end_idx: int,
+        pad_idx: int,
+        k: int,
+    ):
+        return golds.reshape(-1, k, int(golds.size(1) / k))
+
     @property
     def name(self):
-        "accuracy_in_top_1"
+        return "accuracy_in_top_1"
 
 
 _eval_factory = {

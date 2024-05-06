@@ -23,6 +23,7 @@ class DataModule(pl.LightningDataModule):
         *,
         train: Optional[str] = None,
         val: Optional[str] = None,
+        is_topk_validation: bool = False,
         predict: Optional[str] = None,
         test: Optional[str] = None,
         index_path: Optional[str] = None,
@@ -53,6 +54,7 @@ class DataModule(pl.LightningDataModule):
         )
         self.train = train
         self.val = val
+        self.is_topk_validation = is_topk_validation
         self.predict = predict
         self.test = test
         self.batch_size = batch_size
@@ -142,6 +144,13 @@ class DataModule(pl.LightningDataModule):
             list(self.parser.samples(path)),
             self.index,
             self.parser,
+        )    
+
+    def _topk_dataset(self, path: str) -> datasets.Dataset:
+        return datasets.TopKDataset(
+            list(self.parser.samples(path)),
+            self.index,
+            self.parser,
         )
 
     # Required API.
@@ -158,12 +167,20 @@ class DataModule(pl.LightningDataModule):
 
     def val_dataloader(self) -> data.DataLoader:
         assert self.val is not None, "no val path"
-        return data.DataLoader(
-            self._dataset(self.val),
-            collate_fn=self.collator,
-            batch_size=2 * self.batch_size,  # Because no gradients.
-            num_workers=1,
-        )
+        if self.is_topk_validation:
+            return data.DataLoader(
+                self._topk_dataset(self.val),
+                collate_fn=self.collator,
+                batch_size=2 * self.batch_size,  # Because no gradients.
+                num_workers=1,
+            )
+        else:
+            return data.DataLoader(
+                self._dataset(self.val),
+                collate_fn=self.collator,
+                batch_size=2 * self.batch_size,  # Because no gradients.
+                num_workers=1,
+            )
 
     def predict_dataloader(self) -> data.DataLoader:
         assert self.predict is not None, "no predict path"
