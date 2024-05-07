@@ -335,12 +335,10 @@ def main() -> None:
     # TODO: Read about why people suggest using a "meta" device
     #       when computing FLOPs.
     with FlopTensorDispatchMode(model) as ftdm:
-        device = args.accelerator
-        model = model.to(device)
         # NOTE: Doing this here will change the order 
         #       of the dataset in the first epoch for actual training.
         x = next(iter(datamodule.train_dataloader()))
-        # TODO: This calls forward and backwward
+        # TODO: This calls forward and backward
         # Instead, we can compute just forward, then 
         # simulate computing a loss and calling backward
         # then separately compute backwards FLOPs?
@@ -359,7 +357,7 @@ def main() -> None:
         util.log_info(f"FLOPs from one train step: {all_flops}")
         # Ensure no gradients when we actually start training.
         model.zero_grad()
-    # Logs number of model parameters.
+    # Logs number of model parameters to W&B.
     if args.log_wandb:
         wandb.config["n_model_params"] = sum(
             p.numel() for p in model.parameters()
