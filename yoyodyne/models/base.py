@@ -305,7 +305,7 @@ class BaseEncoderDecoder(pl.LightningModule):
             greedy_predictions, 2, 0, target_padded.size(1)
         )
         loss = self.loss_func(greedy_predictions, target_padded)
-        val_eval_items_dict.update({"val_loss": loss.cpu()})
+        val_eval_items_dict.update({"val_loss": loss})
         return val_eval_items_dict
 
     def validation_epoch_end(self, validation_step_outputs: Dict) -> Dict:
@@ -318,7 +318,7 @@ class BaseEncoderDecoder(pl.LightningModule):
             Dict: averaged metrics over all validation steps.
         """
         avg_val_loss = (
-            numpy.mean([v["val_loss"] for v in validation_step_outputs])
+            torch.tensor([v["val_loss"] for v in validation_step_outputs]).mean()
         )
         # Gets requested metrics
         metrics = {
