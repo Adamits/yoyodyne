@@ -566,6 +566,10 @@ class TransformerDecoder(TransformerModule):
         return base.ModuleOutput(output, embeddings=target_embedding)
 
     def get_module(self) -> nn.TransformerDecoder:
+        print(
+            self.decoder_input_size,
+            self.hidden_size,
+        )
         decoder_layer = nn.TransformerDecoderLayer(
             d_model=self.decoder_input_size,
             dim_feedforward=self.hidden_size,
@@ -578,7 +582,7 @@ class TransformerDecoder(TransformerModule):
         return nn.TransformerDecoder(
             decoder_layer=decoder_layer,
             num_layers=self.layers,
-            norm=nn.LayerNorm(self.embedding_size),
+            norm=nn.LayerNorm(self.decoder_input_size),
         )
 
     @staticmethod
@@ -700,7 +704,7 @@ class TransformerPointerDecoder(TransformerDecoder):
             return TransformerDecoderSeparateFeatures(
                 decoder_layer=decoder_layer,
                 num_layers=self.layers,
-                norm=nn.LayerNorm(self.embedding_size),
+                norm=nn.LayerNorm(self.decoder_input_size),
             )
         else:
             decoder_layer = nn.TransformerDecoderLayer(
@@ -715,7 +719,7 @@ class TransformerPointerDecoder(TransformerDecoder):
             return nn.TransformerDecoder(
                 decoder_layer=decoder_layer,
                 num_layers=self.layers,
-                norm=nn.LayerNorm(self.embedding_size),
+                norm=nn.LayerNorm(self.decoder_input_size),
             )
 
     def patch_attention(self, attention_module: torch.nn.Module) -> None:

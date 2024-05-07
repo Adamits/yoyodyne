@@ -6,7 +6,7 @@ from typing import Optional
 import torch
 from torch import nn
 
-from .. import data, defaults
+from .. import data, defaults, util
 from . import base, modules
 
 
@@ -37,6 +37,12 @@ class TransformerEncoderDecoder(base.BaseEncoderDecoder):
             *args, source_attention_heads=source_attention_heads, **kwargs
         )
         if self.enc_dec_mismatch:
+            util.log_info(
+                "There is a mismatch between the encoder output size and"
+                "decoder input size. Inserting a "
+                f"{self.source_encoder.output_size} X {self.embedding_size} linear"
+                "layer between encoder and decoder to resolve this"
+            )
             self.encoder_decoder_projection = nn.Linear(
                 self.source_encoder.output_size, self.embedding_size
             )
@@ -45,14 +51,12 @@ class TransformerEncoderDecoder(base.BaseEncoderDecoder):
         )
 
     def get_decoder(self):
-        # TODO: Decoder input size and embedding size need to be the same, I think.
-        # To fix this we added the projection layer, and thus need to update the inline FIXME below.
         return modules.transformer.TransformerDecoder(
             pad_idx=self.pad_idx,
             start_idx=self.start_idx,
             end_idx=self.end_idx,
             num_embeddings=self.target_vocab_size,
-            decoder_input_size=self.source_encoder.output_size, # FIXME: I think needs to be self.embedding size.
+            decoder_input_size=self.embedding_size,
             dropout=self.dropout,
             embedding_size=self.embedding_size,
             source_attention_heads=self.source_attention_heads,
