@@ -202,17 +202,35 @@ class SEREvaluator(Evaluator):
 
     def _compute_ser(
         self,
-        preds: List[str],
-        target: List[str],
+        preds: torch.Tensor,
+        target: torch.Tensor,
     ) -> float:
-        errors = _edit_distance(preds, target)
+        errors = self._edit_distance(preds, target)
         total = len(target)
         return errors / total
 
+    @staticmethod
+    def _edit_distance(x: torch.Tensor, y: torch.Tensor) -> int:
+        idim = len(x) + 1
+        jdim = len(y) + 1
+        table = numpy.zeros((idim, jdim), dtype=numpy.uint16)
+        table[:, 0] = range(idim)
+        table[0, :] = range(jdim)
+        for i in range(1, idim):
+            for j in range(1, jdim):
+                if x[i - 1] == y[j - 1]:
+                    table[i][j] = table[i - 1][j - 1]
+                else:
+                    c1 = table[i - 1][j]
+                    c2 = table[i][j - 1]
+                    c3 = table[i - 1][j - 1]
+                    table[i][j] = min(c1, c2, c3) + 1
+        return int(table[-1][-1])
+
     def get_eval_item(
         self,
-        predictions: List[List[str]],
-        golds: List[List[str]],
+        predictions: torch.Tensor,
+        golds: torch.Tensor,
         pad_idx: int,
     ) -> EvalItem:
         sers = [self._compute_ser(p, g) for p, g in zip(predictions, golds)]
@@ -229,7 +247,7 @@ class SEREvaluator(Evaluator):
             # Returns a list of a numpy char vector.
             # This is allows evaluation over strings without converting
             # integer indices back to symbols.
-            return [numpy.char.mod("%d", tensor.cpu().numpy())]
+            return [tensor]
         out = []
         for prediction in tensor:
             # Gets first instance of EOS.
@@ -240,15 +258,14 @@ class SEREvaluator(Evaluator):
                 eos = eos[0]
             else:
                 # Leaves tensor[i] alone.
-                out.append(numpy.char.mod("%d", prediction))
+                out.append(prediction)
                 continue
             # Hack in case the first prediction is EOS. In this case
             # torch.split will result in an error, so we change these 0's to
             # 1's, which will make the entire sequence EOS as intended.
             eos[eos == 0] = 1
             symbols, *_ = torch.split(prediction, eos)
-            # Accumulates a list of numpy char vectors.
-            out.append(numpy.char.mod("%d", symbols))
+            out.append(symbols)
         return out
 
     def finalize_predictions(
