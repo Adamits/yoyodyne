@@ -7,7 +7,7 @@ from typing import List, Optional, Tuple, Union
 import torch
 from torch import nn
 
-from .. import data, defaults
+from .. import data, defaults, util
 from . import base, modules
 
 
@@ -37,6 +37,23 @@ class LSTMEncoderDecoder(base.BaseEncoderDecoder):
         # Initial hidden state whose parameters are shared across all examples.
         self.h0 = nn.Parameter(torch.rand(self.hidden_size))
         self.c0 = nn.Parameter(torch.rand(self.hidden_size))
+        if self.needs_enc_dec_projection:
+            # util.log_info(
+            #     "There is a mismatch between the encoder output size and"
+            #     "decoder input size. Inserting a "
+            #     f"{self.source_encoder.output_size} X {self.embedding_size} linear"
+            #     "layer between encoder and decoder to resolve this"
+            # )
+            # FIXME: Should we project it to self.hidden_size instead?
+            # FIXME: In that case, we need to update how we instantiate attention.
+            # FIXME Alternatively we could do nothing and let attention just handle it like usual...
+            util.log_info(
+                f"Inserting a {self.source_encoder.output_size} X {self.source_encoder.output_size}"
+                " linear layer between encoder and decoder."
+            )
+            self.encoder_decoder_projection = nn.Linear(
+                self.source_encoder.output_size, self.source_encoder.output_size
+            )
         self.classifier = nn.Linear(self.hidden_size, self.target_vocab_size)
 
     def get_decoder(self) -> modules.lstm.LSTMDecoder:
@@ -289,6 +306,8 @@ class LSTMEncoderDecoder(base.BaseEncoderDecoder):
                 (seq_len, batch_size, target_vocab_size).
         """
         encoder_out = self.source_encoder(batch.source, pack_sequences=pack_sequences).output
+        if self.needs_enc_dec_projection:
+                encoder_out = self.encoder_decoder_projection(encoder_out)
         if self.beam_width is not None and self.beam_width > 1:
             predictions = self.beam_decode(
                 encoder_out,
@@ -309,6 +328,11 @@ class LSTMEncoderDecoder(base.BaseEncoderDecoder):
     @property
     def name(self) -> str:
         return "LSTM"
+    
+    @property
+    def needs_enc_dec_projection(self) -> bool:
+        # return self.source_encoder.output_size != self.embedding_size
+        return isinstance(self.source_encoder, modules.transformer.TransformerModule)
 
     @staticmethod
     def add_argparse_args(parser: argparse.ArgumentParser) -> None:

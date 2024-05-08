@@ -61,6 +61,7 @@ def add_argparse_args(parser: argparse.ArgumentParser) -> None:
         "--is_topk_validation",
         action="store_true",
         default=False,
+        help="Specifies that for each source there are many valid targets."
     )
     parser.add_argument(
         "--batch_size",

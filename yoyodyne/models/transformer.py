@@ -36,12 +36,16 @@ class TransformerEncoderDecoder(base.BaseEncoderDecoder):
         super().__init__(
             *args, source_attention_heads=source_attention_heads, **kwargs
         )
-        if self.enc_dec_mismatch:
+        if self.needs_enc_dec_projection:
+            # util.log_info(
+            #     "There is a mismatch between the encoder output size and"
+            #     "decoder input size. Inserting a "
+            #     f"{self.source_encoder.output_size} X {self.embedding_size} linear"
+            #     "layer between encoder and decoder to resolve this"
+            # )
             util.log_info(
-                "There is a mismatch between the encoder output size and"
-                "decoder input size. Inserting a "
-                f"{self.source_encoder.output_size} X {self.embedding_size} linear"
-                "layer between encoder and decoder to resolve this"
+                f"Inserting a {self.source_encoder.output_size} X {self.embedding_size}"
+                " linear layer between encoder and decoder."
             )
             self.encoder_decoder_projection = nn.Linear(
                 self.source_encoder.output_size, self.embedding_size
@@ -156,7 +160,7 @@ class TransformerEncoderDecoder(base.BaseEncoderDecoder):
                 (starts == self.pad_idx, batch.target.mask), dim=1
             )
             encoder_output = self.source_encoder(batch.source, pack_sequences=pack_sequences).output
-            if self.enc_dec_mismatch:
+            if self.needs_enc_dec_projection:
                 encoder_output = self.encoder_decoder_projection(encoder_output)
             decoder_output = self.decoder(
                 encoder_output, batch.source.mask, target_padded, target_mask
@@ -165,7 +169,7 @@ class TransformerEncoderDecoder(base.BaseEncoderDecoder):
             output = logits[:, :-1, :]  # Ignore EOS.
         else:
             encoder_output = self.source_encoder(batch.source, pack_sequences=pack_sequences).output
-            if self.enc_dec_mismatch:
+            if self.needs_enc_dec_projection:
                 encoder_output = self.encoder_decoder_projection(encoder_output)
             # -> B x seq_len x output_size.
             output = self._decode_greedy(
@@ -176,8 +180,9 @@ class TransformerEncoderDecoder(base.BaseEncoderDecoder):
         return output
 
     @property
-    def enc_dec_mismatch(self) -> bool:
-        return self.source_encoder.output_size != self.embedding_size
+    def needs_enc_dec_projection(self) -> bool:
+        # return self.source_encoder.output_size != self.embedding_size
+        return isinstance(self.source_encoder, modules.lstm.LSTMModule)
     
     @property
     def name(self) -> str:

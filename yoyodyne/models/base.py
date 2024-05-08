@@ -300,11 +300,41 @@ class BaseEncoderDecoder(pl.LightningModule):
         }
         # -> B x target_vocab_size x seq_len. For loss.
         greedy_predictions = greedy_predictions.transpose(1, 2)
-        # Truncates predictions to the size of the target.
-        greedy_predictions = torch.narrow(
-            greedy_predictions, 2, 0, target_padded.size(1)
-        )
-        loss = self.loss_func(greedy_predictions, target_padded)
+        # if we do not have top-k targets.
+        if batch.target.k is None:
+            # Truncates predictions to the size of the target.
+            greedy_predictions = torch.narrow(
+                greedy_predictions, 2, 0, target_padded.size(1)
+            )
+            loss = self.loss_func(greedy_predictions, target_padded)
+        # FIXME: This is the same as what the evaluator has to do... probably want to move this.
+        else:
+            # Truncates predictions to the seq len of the target.
+            greedy_predictions = torch.narrow(
+                greedy_predictions, 2, 0, int(target_padded.size(1) / batch.target.k)
+            )
+            # target_padded = target_padded.reshape(
+            #     -1, batch.target.k, int(target_padded.size(1) / batch.target.k)
+            # )
+            # -> B x k x vocab_size x seq_len 
+            greedy_predictions = greedy_predictions.unsqueeze(1).repeat(
+                1, batch.target.k, 1, 1
+            )
+            # Flattens k and seq_len to match targets.
+            flattened_dim = greedy_predictions.size(1) * greedy_predictions.size(3)
+            loss = self.loss_func(
+                greedy_predictions.reshape(
+                    greedy_predictions.size(0),
+                    greedy_predictions.size(2),
+                    flattened_dim,
+                ),
+                target_padded
+            )
+            # loss = self.loss_func(
+            #     greedy_predictions, target_padded.reshape(
+            #         -1, batch.target.k, int(target_padded.size(1) / batch.target.k)
+            #     )[:, 0, :]
+            # )
         val_eval_items_dict.update({"val_loss": loss})
         return val_eval_items_dict
 
