@@ -31,9 +31,17 @@ class ValidationMetric:
             self.filename = "model-{epoch:03d}-{val_accuracy:.3f}"
             self.mode = "max"
             self.monitor = "val_accuracy"
+        elif metric == "accuracy_in_top_1":
+            self.filename = "model-{epoch:03d}-{accuracy_in_top_1:.3f}"
+            self.mode = "max"
+            self.monitor = "accuracy_in_top_1"
         elif metric == "loss":
             self.filename = "model-{epoch:03d}-{val_loss:.3f}"
             self.mode = "min"
             self.monitor = "val_loss"
+        elif metric == "ser":
+            self.filename = "model-{epoch:03d}-{val_ser:.3f}"
+            self.mode = "min"
+            self.monitor = "val_ser"
         else:
             raise Error(f"Unknown metric: {metric}")
