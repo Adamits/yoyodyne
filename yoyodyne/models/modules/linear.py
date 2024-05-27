@@ -32,7 +32,7 @@ class LinearModule(base.BaseModule):
 
 class LinearEncoder(LinearModule):
     def forward(
-        self, source: data.PaddedTensor
+        self, source: data.PaddedTensor, *args, **kwargs,
     ) -> Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         """Encodes the input.
 
