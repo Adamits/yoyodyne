@@ -162,7 +162,7 @@ class DataModule(pl.LightningDataModule):
             collate_fn=self.collator,
             batch_size=self.batch_size,
             shuffle=True,
-            num_workers=1,
+            num_workers=4,
         )
 
     def val_dataloader(self) -> data.DataLoader:
@@ -172,14 +172,14 @@ class DataModule(pl.LightningDataModule):
                 self._topk_dataset(self.val),
                 collate_fn=self.collator,
                 batch_size=2 * self.batch_size,  # Because no gradients.
-                num_workers=1,
+                num_workers=4,
             )
         else:
             return data.DataLoader(
                 self._dataset(self.val),
                 collate_fn=self.collator,
                 batch_size=2 * self.batch_size,  # Because no gradients.
-                num_workers=1,
+                num_workers=4,
             )
 
     def predict_dataloader(self) -> data.DataLoader:
