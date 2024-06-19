@@ -58,7 +58,7 @@ class TsvParser:
     @staticmethod
     def _tsv_reader(path: str) -> Iterator[str]:
         with open(path, "r") as tsv:
-            yield from csv.reader(tsv, delimiter="\t")
+            yield from csv.reader(tsv, delimiter="\t", quotechar=None)
 
     @staticmethod
     def _get_string(row: List[str], col: int) -> str:
@@ -89,6 +89,8 @@ class TsvParser:
     ]:
         """Yields source, and features and/or target if available."""
         for row in self._tsv_reader(path):
+            if len(row) == 0:
+                continue
             source = self.source_symbols(
                 self._get_string(row, self.source_col)
             )
