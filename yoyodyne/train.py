@@ -9,7 +9,7 @@ import wandb
 from pytorch_lightning import callbacks, loggers
 from torchtnt.utils.flops import FlopTensorDispatchMode
 
-from . import data, defaults, evaluators, models, schedulers, util
+from . import data, defaults, evaluators, metrics, models, schedulers, util
 
 
 class Error(Exception):
@@ -37,39 +37,56 @@ def _get_logger(experiment: str, model_dir: str, log_wandb: bool) -> List:
     return trainer_logger
 
 
-def _get_callbacks(save_top_k: int, patience: Optional[int] = None) -> List:
+def _get_callbacks(
+    num_checkpoints: int = defaults.NUM_CHECKPOINTS,
+    checkpoint_metric: str = defaults.CHECKPOINT_METRIC,
+    patience: Optional[int] = None,
+    patience_metric: str = defaults.PATIENCE_METRIC,
+) -> List[callbacks.Callback]:
     """Creates the callbacks.
 
     We will reach into the callback metrics list to picks ckp_callback to find
     the best checkpoint path.
 
     Args:
-        save_top_k (int).
-        patience (int, optional).
+        num_checkpoints (int, optional): number of checkpoints to save. To
+            save one checkpoint per epoch, use `-1`.
+        checkpoint_metric (string, optional): validation metric used to
+            select checkpoints.
+        patience (int, optional): number of epochs with no
+            progress (according to `patience_metric`) before triggering
+            early stopping.
+        patience_metric (string, optional): validation metric used to
+            trigger early stopping.
 
     Returns:
-        List: callbacks.
+        List[callbacks.Callback]: callbacks.
     """
     trainer_callbacks = [
-        callbacks.ModelCheckpoint(
-            save_top_k=save_top_k,
-            monitor="val_accuracy",
-            mode="max",
-            filename="model-{epoch:03d}-{val_accuracy:.3f}",
-        ),
         callbacks.LearningRateMonitor(logging_interval="epoch"),
         callbacks.TQDMProgressBar(),
     ]
+    # Patience callback if requested.
     if patience is not None:
+        metric = metrics.ValidationMetric(patience_metric)
         trainer_callbacks.append(
             callbacks.early_stopping.EarlyStopping(
-                monitor="val_accuracy",
-                min_delta=0.0,
+                mode=metric.mode,
+                monitor=metric.monitor,
                 patience=patience,
-                verbose=False,
-                mode="max",
             )
         )
+    # Checkpointing callback. Ensure that this is the last checkpoint,
+    # as the API assumes that.
+    metric = metrics.ValidationMetric(checkpoint_metric)
+    trainer_callbacks.append(
+        callbacks.ModelCheckpoint(
+            filename=metric.filename,
+            mode=metric.mode,
+            monitor=metric.monitor,
+            save_top_k=num_checkpoints,
+        )
+    )
     return trainer_callbacks
 
 
@@ -86,7 +103,12 @@ def get_trainer_from_argparse_args(
     """
     return pl.Trainer.from_argparse_args(
         args,
-        callbacks=_get_callbacks(args.save_top_k, args.patience),
+        callbacks=_get_callbacks(
+            args.num_checkpoints,
+            args.checkpoint_metric,
+            args.patience,
+            args.patience_metric,
+        ),
         default_root_dir=args.model_dir,
         enable_checkpointing=True,
         logger=_get_logger(args.experiment, args.model_dir, args.log_wandb),
@@ -232,8 +254,9 @@ def train(
         str: path to best checkpoint.
     """
     trainer.fit(model, datamodule, ckpt_path=train_from)
+    # The API assumes that the last callback is the checkpointing one, and
+    # _get_callbacks must enforce this.
     ckp_callback = trainer.callbacks[-1]
-    # TODO: feels flimsy.
     assert type(ckp_callback) is callbacks.ModelCheckpoint
     return ckp_callback.best_model_path
 
@@ -269,13 +292,33 @@ def add_argparse_args(parser: argparse.ArgumentParser) -> None:
     )
     # Other training arguments.
     parser.add_argument(
-        "--patience", type=int, help="Patience for early stopping."
+        "--num_checkpoints",
+        type=int,
+        default=defaults.NUM_CHECKPOINTS,
+        help="Number of checkpoints to save. To save one checkpoint per "
+        "epoch, use `-1`. Default: %(default)s.",
     )
     parser.add_argument(
-        "--save_top_k",
+        "--checkpoint_metric",
+        choices=["accuracy", "loss", "ser", "accuracy_in_top_1"],
+        default=defaults.CHECKPOINT_METRIC,
+        help="Selects checkpoints to maximize validation `accuracy` "
+        "or minimize validation `loss`. "
+        "Default: %(default)s.",
+    )
+    parser.add_argument(
+        "--patience",
         type=int,
-        default=defaults.SAVE_TOP_K,
-        help="Number of checkpoints to save. Default: %(default)s.",
+        help="Number of epochs with no progress (according to "
+        "`--patience_metric`) before triggering early stopping. "
+        "Default: not enabled.",
+    )
+    parser.add_argument(
+        "--patience_metric",
+        choices=["accuracy", "loss", "ser", "accuracy_in_top_1"],
+        default=defaults.PATIENCE_METRIC,
+        help="Stops early when validation `accuracy` stops increasing or "
+        "when validation `loss` stops decreasing. Default: %(default)s.",
     )
     parser.add_argument("--seed", type=int, help="Random seed.")
     parser.add_argument(
